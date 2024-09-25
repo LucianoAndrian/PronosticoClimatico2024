@@ -1,7 +1,6 @@
 # Crear un Environment de Conda en Linux
 
 1. Es necesario tener Anaconda o Miniconda ya instalado (Si es el caso, pasar al paso 2).
-
 Para instalar Miniconda por terminal:  
 `mkdir -p ~/miniconda3`  
 `wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda3/miniconda.sh`  
