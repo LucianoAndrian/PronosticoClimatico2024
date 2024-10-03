@@ -7,7 +7,7 @@ import numpy as np
 # ---------------------------------------------------------------------------- #
 
 """
-Se pueden importar las funciones desde el script y cuando 
+Se pueden importar las funciones desde el script siempre y cuando 
 funciones_practicas.py este en el directorio de trabajo
 """
 from funciones_practicas import Signal, Noise, CrossAnomaly_1y, ACC, \
