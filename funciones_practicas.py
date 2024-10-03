@@ -1,7 +1,12 @@
 """Funciones para setear archivos de modelos"""
 # import --------------------------------------------------------------------- #
 import xarray as xr
+import matplotlib.pyplot as plt
 import numpy as np
+import cartopy.feature
+from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
+import cartopy.crs as ccrs
+
 # ---------------------------------------------------------------------------- #
 # funciones auxiliares
 def verbose_fun(message, verbose=True):
@@ -185,12 +190,13 @@ def ACC_Teorico(data):
     promedio del ACC entre MME y cada miembro de ensamble
 
     parametros:
-    data (xr.Dataset): con dimenciones lon, lat, time (no importa el orden)
+    data (xr.Dataset): con dimenciones lon, lat, time, r (no importa el orden)
 
     return (xr.Dataset): campo 2D lon, lat.
     """
     # Controles -------------------------------------------------------------- #
     required_dims = ['lon', 'lat', 'time', 'r']
+    dims_ok = False
     if not all(dim in data.dims for dim in required_dims):
         print(f"Error: data debe tener las dimensiones: "
               f"{', '.join(required_dims)}")
@@ -198,7 +204,7 @@ def ACC_Teorico(data):
         dims_ok = True
 
     if dims_ok is True:
-
+        # Calculo ------------------------------------------------------------ #
         for r in data.r.values:
             data_r = data.sel(r=r)
             data_r = data_r - data_r.mean('time')
@@ -217,5 +223,52 @@ def ACC_Teorico(data):
         theo_acc = None
 
     return theo_acc
+
+# ---------------------------------------------------------------------------- #
+def PlotContourf_SA(data, data_var, scale, cmap, title):
+    """
+    Funcion de ejemplo de ploteo de datos georeferenciados
+
+    Parametros:
+    data (xr.Dataset): del cual se van a tomar los valores de lon y lat
+    data_var (xr.Dataarray): variable a graficar
+    scale (array): escala para plotear contornos
+    cmap (str): nombre de paleta de colores de matplotlib
+    title (str): título del grafico
+    """
+    crs_latlon = ccrs.PlateCarree()
+
+    fig = plt.figure(figsize=(5,6), dpi=100)
+
+    ax = plt.axes(projection=ccrs.PlateCarree(central_longitude=180))
+    ax.set_extent([275, 330, -60, 20], crs=crs_latlon)
+
+    # Contornos
+    im = ax.contourf(data.lon,
+                     data.lat,
+                     data_var,
+                     levels=scale,
+                     transform=crs_latlon, cmap=cmap, extend='both')
+
+    # barra de colores
+    cb = plt.colorbar(im, fraction=0.042, pad=0.035, shrink=0.8)
+    cb.ax.tick_params(labelsize=8)
+
+    ax.coastlines(color='k', linestyle='-', alpha=1)
+
+    ax.set_xticks(np.arange(275, 330, 10), crs=crs_latlon)
+    ax.set_yticks(np.arange(-60, 40, 20), crs=crs_latlon)
+    lon_formatter = LongitudeFormatter(zero_direction_label=True)
+    lat_formatter = LatitudeFormatter()
+    ax.xaxis.set_major_formatter(lon_formatter)
+    ax.yaxis.set_major_formatter(lat_formatter)
+
+    ax.gridlines(crs=crs_latlon, linewidth=0.3, linestyle='-')
+    ax.tick_params(labelsize=10)
+
+    plt.title(title, fontsize=12)
+
+    plt.tight_layout()
+    plt.show()
 
 # ---------------------------------------------------------------------------- #
