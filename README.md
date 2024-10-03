@@ -14,8 +14,9 @@
     ~/miniconda3/bin/conda init zsh
 
 2. Crear el environment de conda.  
-Por terminal, ejecutar:  
+Por terminal, ejecutar (verificar ruta al arhvico PronoClim.yml):  
     >conda env create -f ./EnvSet/PronoClim.yml
+
 
 3. Activar el environment.  
 Una vez creado, para activar el environment:  
