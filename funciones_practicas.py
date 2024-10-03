@@ -1,4 +1,4 @@
-"""Funciones para setear archivos de modelos"""
+"""Funciones para las practicas"""
 # import --------------------------------------------------------------------- #
 import xarray as xr
 import matplotlib.pyplot as plt
