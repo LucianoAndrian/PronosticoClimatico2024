@@ -1,4 +1,4 @@
-# Crear un Environment de Conda en Linux
+# Crear un Environnement de Conda en Linux
 
 1. Es necesario tener Anaconda o Miniconda ya instalado (Si es el caso, pasar al paso 2).
 
