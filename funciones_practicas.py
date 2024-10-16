@@ -6,6 +6,8 @@ import numpy as np
 import cartopy.feature
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 import cartopy.crs as ccrs
+import pandas as pd
+import statsmodels.api as sm
 
 # ---------------------------------------------------------------------------- #
 # funciones auxiliares
@@ -270,5 +272,260 @@ def PlotContourf_SA(data, data_var, scale, cmap, title):
 
     plt.tight_layout()
     plt.show()
+
+# ---------------------------------------------------------------------------- #
+class MLR:
+    def __init__(self, predictores):
+        self.predictores = predictores
+        """
+        Inicializa MLR
+
+        Parametros:
+        perdictores (list): con series temporales a usar como predictores
+        los elementos de las listas pueden ser xr.DataSet, xr.DataArray o 
+        np.ndarray 
+        """
+
+    def mlr_1d(self, series, intercept=True):
+        """Funcion de regresión lineal multiple en una dimención
+
+        Parametros:
+        series (dict): diccionario con nombre y datos de las series temporales
+        siendo la primera el predictando y el resto predictores.
+        intercept (bool): True, ordenada al orgine (recomendado usar siempre)
+
+        return (ndarray): coeficientes del modelo de regresion en orden:
+        constante, b1, b2, b3, ..., bn
+        """
+        df = pd.DataFrame(series)
+        if intercept:
+            X = sm.add_constant(df[df.columns[1:]])
+        else:
+            X = df[df.columns[1:]]
+
+        y = df[df.columns[0]]
+        model = sm.OLS(y, X).fit()
+        coefs_results = model.params.values
+
+        return coefs_results
+
+    def aux_QueEsEsto(self, serie, recursive=False, count=1):
+        """Funcion auxiliar para manejar tres tipos de datos de entrada
+
+        Parametros:
+        serie (xr.Dataset, xr.DataArray, np.ndarray o lista de estas variables):
+        series temporales
+        recursive (bool): True, cuenta las iteraciones
+        count (int): numero de iteraciones
+
+        return (np.ndarray) valores de cada serie
+        si recursive = True ademas devuelve el nombre que se le asigna a la
+        serie. En el caso de ser xr.Dataset usa el nombre de la variable
+        """
+        resultados = []
+
+        if isinstance(serie, list):
+            for elem in serie:
+                sub_resultados, count = self.aux_QueEsEsto(elem, True, count)
+                resultados.extend(sub_resultados)
+
+        elif isinstance(serie, xr.Dataset):
+            name = list(serie.keys())[0]
+            resultados.append((f'{name}_{count}', serie[name].values))
+            count += 1
+
+        elif isinstance(serie, xr.DataArray):
+            name = serie.name if serie.name is not None else 'coef'
+            resultados.append((f'{name}_{count}', serie.values))
+            count += 1
+
+        elif isinstance(serie, np.ndarray):
+            resultados.append((f'coef_{count}', serie))
+            count += 1
+
+        else:
+            resultados.append((None, None))
+
+        if recursive:
+            return resultados, count
+        else:
+            return resultados
+
+    def make_series(self, serie_target):
+        """Incorpora a "series" a partir de "serie_target" y "predictores"
+
+        Parametros:
+        serie_target (np.ndarray): serie temporal, predictando
+
+        return (dict): diccionario con nombre y datos de las series temporales
+        """
+        name_serie_target, data_serie_target = (
+            self.aux_QueEsEsto(serie_target))[0]
+
+        len_serie_target = len(data_serie_target)
+
+        series = {name_serie_target: data_serie_target}
+
+        # predictores
+        name_n_data_predictores = self.aux_QueEsEsto(self.predictores)
+
+        len_ok = True  # control de longitudes de las series
+        for e in name_n_data_predictores:
+            if len(e[1]) == len_serie_target:
+                series[e[0]] = e[1]
+            else:
+                len_ok = False
+
+        return series, len_ok
+
+    def pre_mlr_1d(self, serie_target, intercept=True):
+        """
+        Función auxiliar para usar mlr_1d() desde compute_MLR()
+
+        Parametros
+        serie_target (np.ndarray): serie temporal, predictando
+        intercept (bool): True, ordenada al orgine (recomendado usar siempre)
+        """
+        series, len_ok = self.make_series(serie_target)
+
+        if len_ok:
+            result = self.mlr_1d(series, intercept)
+        else:
+            result = 0
+
+        return result
+
+    def compute_MLR(self, xrda, intercept=True):
+        """
+        Aplica mlr_1d a cada punto de grilla de un xr.DataArray utilizando
+        "predictores".
+        Esta forma es mas eficiente que el uso de ciclos para recorrer todas
+        las dimensiones del array.
+
+        Parametros:
+        xrda (xr.DataArray): array dim [time, lon, lat] o [time, lon, lat, r]
+        (no importa el orden, cuanto mas dimenciones mas tiempo va tardar)
+        intercept (bool): True, ordenada al orgine (recomendado usar siempre)
+
+        return (xr.DataArray): array de dimenciones [lon, lat, coef.] o
+        [r, lon, lat, coef] donde cada valor en "coef" es un coeficiente del
+        modelo lineal en cada punto de grilla en orden: constante, b1, b2..., bn
+        """
+
+        # El calculo se hace acá --------------------------------------------- #
+        coef_dataset = xr.apply_ufunc(
+            self.pre_mlr_1d, xrda, intercept,
+            input_core_dims=[['time'], []],
+            output_core_dims=[[]],
+            output_dtypes=[list],
+            vectorize=True)
+        # -------------------------------------------------------------------- #
+
+        # Acomodando los datos en funcion de si existe o no la dimension 'r'
+        if "r" in coef_dataset.dims:
+
+            aux = np.array(
+                [[[np.array(item) for item in row] for row in r_slice] for
+                 r_slice in coef_dataset.values]
+            )
+
+            coef_f = xr.DataArray(
+                data=aux,
+                dims=["r", "lat", "lon", "coef"],
+                coords={"r": coef_dataset.r.values,
+                        "lat": coef_dataset.lat.values,
+                        "lon": coef_dataset.lon.values,
+                        "coef": list(self.make_series(xrda)[0].keys())}
+            )
+
+        else:
+            aux = np.array(
+                [[np.array(item) for item in row] for row in
+                 coef_dataset.values])
+
+            coef_f = xr.DataArray(
+                data=aux,
+                dims=["lat", "lon", "coef"],
+                coords={"lat": coef_dataset.lat.values,
+                        "lon": coef_dataset.lon.values,
+                        "coef":
+                            list(self.make_series(xrda)[0].keys())}
+            )
+
+        return coef_f
+
+# ---------------------------------------------------------------------------- #
+def Compute_MLR_CV(xrds, predictores, window_years, intercept=True):
+    """
+    Funcion de EJEMPLO de MLR con validación cruzada.
+
+    La funcion tiene aspectos por mejorar, por ejemplo:
+     - parelización: se podria acelerar el computo de manera considerable
+     - return: la manera en la que se devuelven los resultados busca satisfacer
+     varias utilidades posteriores de ellos pero puede no ser la mas adecuada.
+
+    Parametros:
+    xrds (xr.Dataset): array dim [time, lon, lat] o [time, lon, lat, r]
+        (no importa el orden, cuanto mas dimenciones mas tiempo va tardar)
+    predictores (list): lista con series temporales a usar como predictores
+    window_years (int): ventana de años a usar en la validacion cruzada
+    intercept (bool): True, ordenada al orgine (recomendado usar siempre)
+
+    return
+    1. array de dimenciones [k, lon, lat, coef.] o [k, r, lon, lat, coef]
+    - "k" son los "k-fold": años seleccionados para el modelo lineal
+    - "coef" coeficientes del modelo lineal en cada punto de grilla en orden:
+     constante, b1, b2..., bn
+     2. idem 1. sin "coef" y en "k" estan los años omitidos en cada k-fold
+     3. dict. Diccionario donde cada elemento es una lista de xr.dataarry con
+     los predictores en los años omitods en cada k-fold
+
+     La idea de estos dos ultimos resultados es poder usarlos para realizar y
+     evaluar el pronostico del modelo lineal en cada periodo omitido.
+    """
+
+    total_tiempos = len(xrds.time)
+    predictores_years_out = {}
+    for i in range(total_tiempos - window_years + 1):
+
+        per10 = 10 * round((i / total_tiempos) * 10)
+        if i == 0 or per10 != 10 * round(((i - 1) / total_tiempos) * 10):
+            print(f"{per10}% completado")
+
+        # posicion de tiempos a omitir
+        tiempos_a_omitir = range(i, i + window_years)
+
+        # selección de tiempos
+        ds_cv = xrds.drop_sel(
+            time=xrds.time.values[tiempos_a_omitir[0]:tiempos_a_omitir[-1]+1])
+        ds_out_years = xrds.drop_sel(time=ds_cv.time.values)
+
+        predictores_cv = []
+        aux_predictores_out_years = []
+        for p in predictores:
+            aux_predictor = p.drop_sel(
+                time=p.time.values[tiempos_a_omitir[0]:tiempos_a_omitir[-1]+1])
+            aux_predictores_out_years.append(
+                p.drop_sel(time=aux_predictor.time.values))
+
+            predictores_cv.append(aux_predictor)
+
+        predictores_years_out[f"k{i}"] = aux_predictores_out_years
+
+        # MLR
+        mlr = MLR(predictores_cv)
+        regre_result = mlr.compute_MLR(ds_cv[list(ds_cv.data_vars)[0]],
+                                       intercept=intercept)
+
+        if i == 0:
+            regre_result_cv = regre_result
+            ds_out_years_cv = ds_out_years
+        else:
+            regre_result_cv = xr.concat([regre_result_cv, regre_result],
+                                        dim='k')
+            ds_out_years_cv = xr.concat([ds_out_years_cv, ds_out_years],
+                                        dim='k')
+
+    return regre_result_cv, ds_out_years_cv, predictores_years_out
 
 # ---------------------------------------------------------------------------- #
