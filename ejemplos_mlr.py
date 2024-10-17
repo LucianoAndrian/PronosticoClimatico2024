@@ -4,7 +4,7 @@ Ejemplos de MLR.
 # ---------------------------------------------------------------------------- #
 import xarray as xr
 import numpy as np
-from funciones_practicas import PlotContourf_SA, MLR, Compute_MLR_CV
+from funciones_practicas import PlotContourf_SA, MLR, Compute_MLR_CV, ACC
 # ---------------------------------------------------------------------------- #
 # Pronosticos de precipitacion para SON
 mod_cm4 =  xr.open_dataset('~/PronoClim/modelos_seteados/'
@@ -168,20 +168,39 @@ for c, p in enumerate(predictores_testing):
 # PROBAR LOS AÑOS: 2015, 2019, 2020
 # Pronostico MLR
 PlotContourf_SA(predict,
-                predict.sel(time='2019-08-01'),
+                predict.sel(time='2015-08-01'),
                 scale=np.arange(-3, 3.2, 0.2),
                 cmap='BrBG', title='GEM5-NEMO - MLR Forecast')
 
 # Pronostico modelo
 PlotContourf_SA(testing,
-                testing.sel(time='2019-08-01').prec[0,:,:],
+                testing.sel(time='2015-08-01').prec[0,:,:],
                 scale=np.arange(-3, 3.2, 0.2),
                 cmap='BrBG', title='GEM5-NEMO')
 
 PlotContourf_SA(prec,
-                prec.sel(time='2019-10-01').prec[0,:,:],
+                prec.sel(time='2015-10-01').prec[0,:,:],
                 scale=np.arange(-3, 3.2, 0.2),
                 cmap='BrBG', title='Observado')
+
+# Podemos operar con ellos también: ------------------------------------------ #
+
+# La función requiere que sean xr.DataSet (puede ser facilmente implementado
+# dentro de la función)
+ds_predict =  xr.Dataset(
+    data_vars={'prec': (('lat', 'lon', 'time'), predict.values)},
+    coords={'lon':predict.lon.values,
+            'lat':predict.lat.values,
+            'time':predict.time.values}
+)
+prec_sel = prec.sel(time=slice('2011-10-01','2020-10-01'))
+
+acc_result = ACC(ds_predict, prec_sel)
+
+PlotContourf_SA(acc_result,
+                acc_result.prec,
+                scale=np.arange(-1, 1.2, 0.2),
+                cmap='BrBG', title='ACC - MLR Forecast - 2011-2020')
 
 ################################################################################
 # ---------------------------------------------------------------------------- #
@@ -195,7 +214,7 @@ PlotContourf_SA(prec,
 # varias utilidades posteriores de ellos pero puede no ser la mas adecuada.
 
 # Tarda aprox 5min
-regre_result_gem_cv, mod_gem_years_out, predictores_years_our = (
+regre_result_gem_cv, mod_gem_years_out, predictores_years_out = (
     Compute_MLR_CV(aux_mod_gem, predictores, window_years=3, intercept=True))
 
 # Salidas de esta funcion:
@@ -212,7 +231,7 @@ k=15 # los años omitidos en el k-fold 15
 coefmodel = regre_result_gem_cv.sel(k=k) # coef. del modelo del k-fold
 predictores_name = list(coefmodel.coef.values) # nombre de los coef
 
-indices = predictores_years_our[f"k{k}"] # valor predictores en los años omitdos
+indices = predictores_years_out[f"k{k}"] # valor predictores en los años omitdos
 
 # Lo mismo que en la linea 146-164
 predict = coefmodel.sel(coef=predictores_name[0]).drop_vars('coef')
