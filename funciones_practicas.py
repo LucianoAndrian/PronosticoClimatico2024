@@ -23,7 +23,7 @@ def Signal(data):
     media del ensamble
 
     Parametros:
-    data (xr.Dataset): con dimenciones lon, lat, time y r (orden no importa)
+    data (xr.Dataset): con dimensiones lon, lat, time y r (orden no importa)
 
     return (xr.Dataset): campo 2D lon, lat
     """
@@ -42,7 +42,7 @@ def Noise(data):
     miembros de ensamble respecto a la media del ensamble
 
     Parametros:
-    data (xr.Dataset): con dimenciones lon, lat, time y r
+    data (xr.Dataset): con dimensiones lon, lat, time y r
 
     return (xr.Dataset): campo 2D lon, lat
     """
@@ -60,25 +60,58 @@ def Noise(data):
 
     return noise
 # ---------------------------------------------------------------------------- #
-def CrossAnomaly_1y(data):
+def CrossAnomaly_1y(data, norm=False, r=False):
     """
     Toma anomalias cruzadas con ventana de un año
 
     Parametros:
-    data (xr.Dataset): con dimenciones lon, lat, time
+    data (xr.Dataset): con dimensiones lon, lat, time
     return (xr.Dataset): campo 2D lon, lat, time
     """
-    for t in data.time.values:
-        data_t = data.sel(time=t)
-        data_no_t = data.where(data.time != t, drop=True)
+    if r:
+        for r_e in data.r.values:
+            for t in data.time.values:
+                data_r_t = data.sel(time=t, r=r_e)
 
-        if t is data.time.values[0]:
-            data_anom = data_t - data_no_t.mean(['time'])
-        else:
+                aux = data.where(data.r != r_e, drop=True)
+                data_no_r_t = aux.where(aux.time != t, drop=True)
+
+                aux_anom = data_r_t - data_no_r_t.mean(['time', 'r'])
+                if norm:
+                    aux_anom = aux_anom / data_no_r_t.std(['time', 'r'])
+
+                if t is data.time.values[0]:
+                    data_anom_t = aux_anom
+                else:
+                    data_anom_t = xr.concat([data_anom_t, aux_anom], dim='time')
+
+            if int(r_e) is int(data.r.values[0]):
+                data_anom = data_anom_t
+            else:
+                data_anom = xr.concat([data_anom, data_anom_t], dim='r')
+
+        var_name = list(data_anom.data_vars.keys())[0]
+        aux_data_anom = data_anom[var_name].transpose('time', 'r', 'lat', 'lon')
+
+        # Asignar el DataArray reordenado de nuevo al Dataset
+        data_anom = data_anom.assign(**{var_name: aux_data_anom})
+
+    else:
+        for t in data.time.values:
+            data_t = data.sel(time=t)
+            data_no_t = data.where(data.time != t, drop=True)
+
             aux_anom = data_t - data_no_t.mean(['time'])
-            data_anom = xr.concat([data_anom, aux_anom], dim='time')
+            if norm:
+                aux_anom = aux_anom / data_no_t.std(['time'])
+
+            if t is data.time.values[0]:
+                data_anom = aux_anom
+            else:
+                data_anom = xr.concat([data_anom, aux_anom], dim='time')
 
     return data_anom
+
 
 # ---------------------------------------------------------------------------- #
 def ACC(data1, data2, crossanomaly=False, reference_time_period=None,
@@ -87,8 +120,8 @@ def ACC(data1, data2, crossanomaly=False, reference_time_period=None,
     Anomaly correlation coefficient
 
     parametros:
-    data1 (xr.Dataset): con dimenciones lon, lat, time (orden no importa)
-    data2 (xr.Dataset): con dimenciones lon, lat, time (orden no importa)
+    data1 (xr.Dataset): con dimensiones lon, lat, time (orden no importa)
+    data2 (xr.Dataset): con dimensiones lon, lat, time (orden no importa)
     crossanomaly (bool): default False, True toma la anomalia cruzada de un año
     reference_time_period (list, opcional): [año_inicial, año_final]
     para el cálculo de anomalías. Si es None y crossanomaly es False,
@@ -98,8 +131,8 @@ def ACC(data1, data2, crossanomaly=False, reference_time_period=None,
     - si 'crossanomaly' es True no se tiene en cuenta 'reference_time_period'
     - si 'crossanomaly' es False y 'reference_time_period' es None,
     se asume que data1 y data2 ya contienen anomalías.
-    - si uno de los data tiene una dimención más el ACC se va devolver tambien
-    para esa dimencion. Ej. data1 [lon, lat, time, r], data2 [lon, lat, time]
+    - si uno de los data tiene una dimensión más el ACC se va devolver tambien
+    para esa dimension. Ej. data1 [lon, lat, time, r], data2 [lon, lat, time]
     el resultado va ser acc [lon, lat, r]
 
     Ejemplo de uso:
@@ -192,7 +225,7 @@ def ACC_Teorico(data):
     promedio del ACC entre MME y cada miembro de ensamble
 
     parametros:
-    data (xr.Dataset): con dimenciones lon, lat, time, r (no importa el orden)
+    data (xr.Dataset): con dimensiones lon, lat, time, r (no importa el orden)
 
     return (xr.Dataset): campo 2D lon, lat.
     """
@@ -287,7 +320,7 @@ class MLR:
         """
 
     def mlr_1d(self, series, intercept=True):
-        """Funcion de regresión lineal multiple en una dimención
+        """Funcion de regresión lineal multiple en una dimensión
 
         Parametros:
         series (dict): diccionario con nombre y datos de las series temporales
@@ -404,10 +437,10 @@ class MLR:
 
         Parametros:
         xrda (xr.DataArray): array dim [time, lon, lat] o [time, lon, lat, r]
-        (no importa el orden, cuanto mas dimenciones mas tiempo va tardar)
+        (no importa el orden, cuanto mas dimensiones mas tiempo va tardar)
         intercept (bool): True, ordenada al orgine (recomendado usar siempre)
 
-        return (xr.DataArray): array de dimenciones [lon, lat, coef.] o
+        return (xr.DataArray): array de dimensiones [lon, lat, coef.] o
         [r, lon, lat, coef] donde cada valor en "coef" es un coeficiente del
         modelo lineal en cada punto de grilla en orden: constante, b1, b2..., bn
         """
@@ -466,13 +499,13 @@ def Compute_MLR_CV(xrds, predictores, window_years, intercept=True):
 
     Parametros:
     xrds (xr.Dataset): array dim [time, lon, lat] o [time, lon, lat, r]
-        (no importa el orden, cuanto mas dimenciones mas tiempo va tardar)
+        (no importa el orden, cuanto mas dimensiones mas tiempo va tardar)
     predictores (list): lista con series temporales a usar como predictores
     window_years (int): ventana de años a usar en la validacion cruzada
     intercept (bool): True, ordenada al orgine (recomendado usar siempre)
 
     return
-    1. array de dimenciones [k, lon, lat, coef.] o [k, r, lon, lat, coef]
+    1. array de dimensiones [k, lon, lat, coef.] o [k, r, lon, lat, coef]
     - "k" son los "k-fold": años seleccionados para el modelo lineal
     - "coef" coeficientes del modelo lineal en cada punto de grilla en orden:
      constante, b1, b2..., bn
@@ -499,6 +532,13 @@ def Compute_MLR_CV(xrds, predictores, window_years, intercept=True):
         ds_cv = xrds.drop_sel(
             time=xrds.time.values[tiempos_a_omitir[0]:tiempos_a_omitir[-1]+1])
         ds_out_years = xrds.drop_sel(time=ds_cv.time.values)
+
+        if 'r' in ds_cv.dims:
+            ds_cv = ds_cv - ds_cv.mean(['r','time'])
+            ds_out_years = ds_out_years - ds_cv.mean(['r','time'])
+        else:
+            ds_cv = ds_cv - ds_cv.mean('time')
+            ds_out_years = ds_out_years - ds_cv.mean(['time'])
 
         predictores_cv = []
         aux_predictores_out_years = []

@@ -4,7 +4,8 @@ Ejemplos de MLR.
 # ---------------------------------------------------------------------------- #
 import xarray as xr
 import numpy as np
-from funciones_practicas import PlotContourf_SA, MLR, Compute_MLR_CV, ACC
+from funciones_practicas import (PlotContourf_SA, MLR, Compute_MLR_CV, ACC,
+                                 CrossAnomaly_1y)
 # ---------------------------------------------------------------------------- #
 # Pronosticos de precipitacion para SON
 mod_cm4 =  xr.open_dataset('~/PronoClim/modelos_seteados/'
@@ -34,10 +35,10 @@ sam = sam.sel(time=sam.time.dt.month.isin(mod_cm4.time.dt.month))
 # diferente
 
 # Anomalia y selección de la season SON observada
-prec = prec.groupby('time.month') - prec.groupby('time.month').mean('time')
 prec = prec.rolling(time=3, center=True).mean()
 prec = prec.sel(time=prec.time.dt.month.isin(10))
-prec = prec/prec.std('time')
+prec = CrossAnomaly_1y(prec, norm=True)
+
 
 ################################################################################
 # Ejemplos:
@@ -58,7 +59,7 @@ prec_regre = mlr.compute_MLR(prec.prec)
 
 print(prec_regre.dims)
 
-# La dimención "coef" contiene los coeficientes del modelo de regresión para
+# La dimensión "coef" contiene los coeficientes del modelo de regresión para
 # CADA PUNTO DE RETICULA
 print(prec_regre.coef)
 # En este caso:
@@ -76,8 +77,9 @@ PlotContourf_SA(prec_regre,
 
 # Tambien podemos aplicar MLR al MODELO con los mismos predictores
 # A la media del ensamble del modelo CanCM4i (probar con GEM5-NEMO)
-aux_mod_cm4 = mod_cm4.mean('r') - mod_cm4.mean(['r', 'time'])
-aux_mod_cm4 = aux_mod_cm4/aux_mod_cm4.std('time')
+# Tomamos anomalia con validacion cruzada
+aux_mod_cm4 = mod_cm4.mean('r')
+aux_mod_cm4 = CrossAnomaly_1y(aux_mod_cm4, norm=True)
 
 regre_result_cm4 = mlr.compute_MLR(aux_mod_cm4.prec)
 
@@ -89,12 +91,12 @@ PlotContourf_SA(regre_result_cm4,
 
 # La clase MLR tambien maneja los modelos con todos sus miembros de ensamble
 # TOMA MAS TIEMPO! aprox 1:30 min
-aux_mod_cm4 = mod_cm4 - mod_cm4.mean(['r', 'time'])
-aux_mod_cm4 = aux_mod_cm4/aux_mod_cm4.std('time')
+aux_mod_cm4 = CrossAnomaly_1y(mod_cm4, norm=True, r=True)
+
 
 regre_result_cm4_r = mlr.compute_MLR(aux_mod_cm4.prec)
 
-# ahora el resultado es igual que antes pero con una dimención más.
+# ahora el resultado es igual que antes pero con una dimensión más.
 print(regre_result_cm4_r.dims)
 
 # Podemos acceder a los coeficientes de cada miembro
@@ -120,14 +122,10 @@ PlotContourf_SA(regre_result_cm4_r,
 # Ejemplo usando los coeficientes en
 # un ejemplo con periodos de training y testing
 # ---------------------------------------------------------------------------- #
-# usando el modelo GEM5-NEMO
-aux_mod_gem = mod_gem.mean('r') - mod_gem.mean(['r', 'time'])
-aux_mod_gem = aux_mod_gem/aux_mod_gem.std('time')
-
 # training de 1983-2010, los ultimos años de testing
-# Modelo
-training = aux_mod_gem.sel(time=slice('1983-08-01', '2010-08-01'))
-testing = aux_mod_gem.drop_sel(time=training.time.values)
+# Con el dataset observado
+training = prec.sel(time=slice('1983-10-01', '2010-10-01'))
+testing = prec.drop_sel(time=training.time.values)
 
 # predictores
 predictores_training = []
@@ -169,18 +167,12 @@ for c, p in enumerate(predictores_testing):
 # Pronostico MLR
 PlotContourf_SA(predict,
                 predict.sel(time='2015-08-01'),
-                scale=np.arange(-3, 3.2, 0.2),
-                cmap='BrBG', title='GEM5-NEMO - MLR Forecast')
-
-# Pronostico modelo
-PlotContourf_SA(testing,
-                testing.sel(time='2015-08-01').prec[0,:,:],
-                scale=np.arange(-3, 3.2, 0.2),
-                cmap='BrBG', title='GEM5-NEMO')
+                scale=np.arange(-2, 2.2, 0.2),
+                cmap='BrBG', title='MLR Forecast')
 
 PlotContourf_SA(prec,
                 prec.sel(time='2015-10-01').prec[0,:,:],
-                scale=np.arange(-3, 3.2, 0.2),
+                scale=np.arange(-2, 2.2, 0.2),
                 cmap='BrBG', title='Observado')
 
 # Podemos operar con ellos también: ------------------------------------------ #
@@ -206,19 +198,22 @@ PlotContourf_SA(acc_result,
 # ---------------------------------------------------------------------------- #
 # Ejemplo de MLR con validación cruzada.
 # ---------------------------------------------------------------------------- #
-# usando la variable que ya tenemos de gem5-nemo
+# usando el modelo gem5-nemo
+aux_mod_gem = mod_gem.mean('r')
+aux_mod_gem = CrossAnomaly_1y(aux_mod_gem, norm=True)
 
 # Está función usa la clase MLR. Puede no ser la manera mas efectiva ni
 # practica.
 # la manera en la que se devuelven los resultados busca satisfacer
 # varias utilidades posteriores de ellos pero puede no ser la mas adecuada.
 
+mlr = MLR(predictores)
 # Tarda aprox 5min
 regre_result_gem_cv, mod_gem_years_out, predictores_years_out = (
     Compute_MLR_CV(aux_mod_gem, predictores, window_years=3, intercept=True))
 
 # Salidas de esta funcion:
-#     1. array de dimenciones [k, lon, lat, coef.] o [k, r, lon, lat, coef]
+#     1. array de dimensiones [k, lon, lat, coef.] o [k, r, lon, lat, coef]
 #     - "k" son los "k-fold": años seleccionados para el modelo lineal
 #     - "coef" coeficientes del modelo lineal en cada punto de grilla en orden:
 #      constante, b1, b2..., bn
@@ -233,7 +228,7 @@ predictores_name = list(coefmodel.coef.values) # nombre de los coef
 
 indices = predictores_years_out[f"k{k}"] # valor predictores en los años omitdos
 
-# Lo mismo que en la linea 146-164
+# Lo mismo que antes
 predict = coefmodel.sel(coef=predictores_name[0]).drop_vars('coef')
 for c, p in enumerate(indices):
     aux = coefmodel.sel(coef=predictores_name[c+1])*p[list(p.data_vars)[0]]
