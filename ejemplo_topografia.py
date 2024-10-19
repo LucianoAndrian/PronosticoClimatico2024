@@ -18,6 +18,11 @@ data = mod_cm4.sel(time='2005-08-01').mean('r')
 
 topografia = xr.open_dataset('~/PronoClim/topografia_sa.nc')
 
+# si se quiere una topografia con alta resolución
+# se puede correr la opcion 1 de SetCodes/descarga_topografia.py
+# necesita la libreria rasterio.
+#topografia = xr.open_dataset('~/PronoClim/topografia_sa_hr.nc')
+
 
 # figura
 fig = plt.figure(figsize=(5,6), dpi=100)
