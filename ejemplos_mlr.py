@@ -4,14 +4,16 @@ Ejemplos de MLR.
 # ---------------------------------------------------------------------------- #
 import xarray as xr
 import numpy as np
+from distributed.comm.ucx import UCXBackend
+
 from funciones_practicas import (PlotContourf_SA, MLR, Compute_MLR_CV, ACC,
                                  CrossAnomaly_1y)
 # ---------------------------------------------------------------------------- #
 # Pronosticos de precipitacion para SON
 mod_cm4 =  xr.open_dataset('~/PronoClim/modelos_seteados/'
-                           'prec_CMC-CanCM4i-IC3_SON.nc')
+                           'prec_CMC-CanCM4i-IC3_MAM.nc')
 mod_gem =  xr.open_dataset('~/PronoClim/modelos_seteados/'
-                           'prec_CMC-GEM5-NEMO_SON.nc')
+                           'prec_CMC-GEM5-NEMO_MAM.nc')
 
 # precipitacion observada
 prec = xr.open_dataset('~/PronoClim/obs_seteadas/prec_monthly_nmme_cpc_sa.nc')
@@ -26,17 +28,17 @@ sam = xr.open_dataset('~/PronoClim/indices_nc/sam_mmean.nc')
 # En este caso (arbitrario) mismo mes que los pronosticos.
 # Agosto --> SON.
 dmi = dmi.sel(time=dmi.time.dt.year.isin(mod_cm4.time.dt.year))
-dmi = dmi.sel(time=dmi.time.dt.month.isin(mod_cm4.time.dt.month))
-n34 = n34.sel(time=n34.time.dt.year.isin(mod_cm4.time.dt.year))
-n34 = n34.sel(time=n34.time.dt.month.isin(mod_cm4.time.dt.month))
+dmi = dmi.sel(time=dmi.time.dt.month.isin(2)) # Febrero
+n34 = n34.sel(time=n34.time.dt.year.isin(mod_cm4.time.dt.year-1))
+n34 = n34.sel(time=n34.time.dt.month.isin(10)) # Octubre del año anterior
 sam = sam.sel(time=sam.time.dt.year.isin(mod_cm4.time.dt.year))
-sam = sam.sel(time=sam.time.dt.month.isin(mod_cm4.time.dt.month))
+sam = sam.sel(time=sam.time.dt.month.isin(1)) # Enero
 # Selecciono de esta manera ya que la codificación de tiempos es ligeramente
 # diferente
 
-# Anomalia y selección de la season SON observada
+# Anomalia y selección de la season MAM observada
 prec = prec.rolling(time=3, center=True).mean()
-prec = prec.sel(time=prec.time.dt.month.isin(10))
+prec = prec.sel(time=prec.time.dt.month.isin(4))
 prec = CrossAnomaly_1y(prec, norm=True)
 
 
@@ -124,23 +126,34 @@ PlotContourf_SA(regre_result_cm4_r,
 # ---------------------------------------------------------------------------- #
 # training de 1983-2010, los ultimos años de testing
 # Con el dataset observado
-training = prec.sel(time=slice('1983-10-01', '2010-10-01'))
-testing = prec.drop_sel(time=training.time.values)
+testing_times = 10 # ultimos tiempos
+
+training = prec.sel(time=prec.time.values[:-testing_times])
+
+testing = prec.sel(time=prec.time.values[-testing_times:])
+testing_times_values = testing.time.values
 
 # predictores
 predictores_training = []
 predictores_testing = []
 for p in predictores:
-    aux_p = p.sel(time=slice('1983-08-01', '2010-08-01'))
+    #aux_p = p.sel(time=slice('1983-08-01', '2010-08-01'))
+    # para evitar problemas con distintos meses...
+    aux_p = p.sel(time=p.time.values[:-testing_times])
 
     predictores_training.append(aux_p)
-    predictores_testing.append(p.drop_sel(time=aux_p.time.values))
+
+    aux_p_testing = p.sel(time=p.time.values[-testing_times:])
+    # Para evitar problemas en la conformación del modelo final:
+    # Reemplazamos los tiempos por los de la variable a pronosticar
+    aux_p_testing['time'] = testing_times_values
+    predictores_testing.append(aux_p_testing)
 
 # MLR en trainging solamente
 mlr = MLR(predictores_training)
-gem5_nemo_regremodel = mlr.compute_MLR(training.prec)
+regremodel = mlr.compute_MLR(training.prec)
 
-predictores_name = list(gem5_nemo_regremodel.coef.values) # nombre de los coef
+predictores_name = list(regremodel.coef.values) # nombre de los coef
 
 # Pronostico sobre testing
 # usando los valores que adquieren los predictores en ese periodo con los
@@ -150,13 +163,12 @@ predictores_name = list(gem5_nemo_regremodel.coef.values) # nombre de los coef
 
 # El siguiente for se podria hacer "a mano". Acá un ejemplo para cualquiera sea
 # la cantidad de predictores
-predict = gem5_nemo_regremodel.sel(coef=predictores_name[0]).drop_vars('coef')
+predict = regremodel.sel(coef=predictores_name[0]).drop_vars('coef')
 
 for c, p in enumerate(predictores_testing):
 
     # Selección del indice y los valores del predictor en testing
-    aux = gem5_nemo_regremodel.sel(
-        coef=predictores_name[c+1])*p[list(p.data_vars)[0]]
+    aux = regremodel.sel(coef=predictores_name[c+1])*p[list(p.data_vars)[0]]
 
     aux = aux.drop_vars('coef') # no deja sumar sino
 
@@ -166,12 +178,12 @@ for c, p in enumerate(predictores_testing):
 # PROBAR LOS AÑOS: 2015, 2019, 2020
 # Pronostico MLR
 PlotContourf_SA(predict,
-                predict.sel(time='2015-08-01'),
+                predict.sel(time='2012-04-01').squeeze(),
                 scale=np.arange(-2, 2.2, 0.2),
                 cmap='BrBG', title='MLR Forecast')
 
 PlotContourf_SA(prec,
-                prec.sel(time='2015-10-01').prec[0,:,:],
+                prec.sel(time='2012-04-01').prec[0,:,:],
                 scale=np.arange(-2, 2.2, 0.2),
                 cmap='BrBG', title='Observado')
 
@@ -185,7 +197,7 @@ ds_predict =  xr.Dataset(
             'lat':predict.lat.values,
             'time':predict.time.values}
 )
-prec_sel = prec.sel(time=slice('2011-10-01','2020-10-01'))
+prec_sel = prec.sel(time=slice('2011-04-01','2020-04-01'))
 
 acc_result = ACC(ds_predict, prec_sel)
 
@@ -233,6 +245,7 @@ predict = coefmodel.sel(coef=predictores_name[0]).drop_vars('coef')
 for c, p in enumerate(indices):
     aux = coefmodel.sel(coef=predictores_name[c+1])*p[list(p.data_vars)[0]]
     aux = aux.drop_vars('coef')
+    aux = aux.drop_vars('time')
     predict = predict + aux
 
 # Media del pronostico para los años omitods
@@ -242,12 +255,16 @@ PlotContourf_SA(predict,
                 cmap='BrBG', title='GEM5-NEMO - MLR Forecast k-fold=15')
 
 # Años omitidos
-mod_gem_years_out.sel(k=k).mean('time').prec
 PlotContourf_SA(mod_gem_years_out,
                 mod_gem_years_out.sel(k=k).mean('time').prec,
                 scale=np.arange(-1, 1.2, 0.2),
                 cmap='BrBG', title='GEM5-NEMO - k-fold=15')
 
+# Recordar:
+# acá:
+mod_gem_years_out.sel(k=k).time
+# estan todos los años pero solo los campos correspondientes a los años del
+# k_fold NO SON NAN.
 ################################################################################
 ################################################################################
 ################################################################################
