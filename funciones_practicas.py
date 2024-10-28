@@ -66,6 +66,8 @@ def CrossAnomaly_1y(data, norm=False, r=False):
 
     Parametros:
     data (xr.Dataset): con dimensiones lon, lat, time
+    norm (bool): True normaliza
+    r (bool): True considera la dimensión r
     return (xr.Dataset): campo 2D lon, lat, time
     """
     if r:
@@ -80,12 +82,12 @@ def CrossAnomaly_1y(data, norm=False, r=False):
                 if norm:
                     aux_anom = aux_anom / data_no_r_t.std(['time', 'r'])
 
-                if t is data.time.values[0]:
+                if t == data.time.values[0]:
                     data_anom_t = aux_anom
                 else:
                     data_anom_t = xr.concat([data_anom_t, aux_anom], dim='time')
 
-            if int(r_e) is int(data.r.values[0]):
+            if int(r_e) == int(data.r.values[0]):
                 data_anom = data_anom_t
             else:
                 data_anom = xr.concat([data_anom, data_anom_t], dim='r')
@@ -105,7 +107,7 @@ def CrossAnomaly_1y(data, norm=False, r=False):
             if norm:
                 aux_anom = aux_anom / data_no_t.std(['time'])
 
-            if t is data.time.values[0]:
+            if t == data.time.values[0]:
                 data_anom = aux_anom
             else:
                 data_anom = xr.concat([data_anom, aux_anom], dim='time')
@@ -568,4 +570,258 @@ def Compute_MLR_CV(xrds, predictores, window_years, intercept=True):
 
     return regre_result_cv, ds_out_years_cv, predictores_years_out
 
+# ---------------------------------------------------------------------------- #
+
+def Weights(data, lon_name='lon', lat_name='lat'):
+    """
+    Normaliza por pesando por el coseno de la latitud
+
+    parametros:
+    data xr.DataArray o xr.DataSet
+    lon_name str nombre de la dimension longitud
+    lat_name str nombre de la dimension latitud
+
+    return
+    data xr.DataArray o xr.DataSet pesado \m/
+    """
+
+    weights = np.transpose(np.tile(np.cos(data[lat_name] * np.pi / 180),
+                                   (len(data[lon_name]), 1)))
+    data_w = data * weights
+    return data_w
+
+
+def normalize_and_fill(data):
+    """
+    Normaliza los datos y rellena los NaN con el valor medio.
+
+    Parameters:
+    data (xarray.DataArray/xarray.DataSet): El campo de datos a normalizar.
+
+    Returns:
+    xarray.DataArray: Datos normalizados y sin NaNs.
+    """
+    try:
+        data = data[list(data.data_vars)[-1]]
+    except:
+        pass
+
+    lon_name = next((name for name in ['lon', 'longitude', 'longitud']
+                     if name in data.dims), None)
+    lat_name = next((name for name in ['lat', 'latitude', 'latitud']
+                     if name in data.dims), None)
+
+    data = Weights(data, lon_name=lon_name, lat_name=lat_name)
+
+    # Calcular el valor medio ignorando NaNs
+    mean_val = data.mean(dim='time', skipna=True)
+    data_filled = data.fillna(mean_val)
+
+    # Normaliza
+    data_normalized = ((data_filled - data_filled.mean(dim='time')) /
+                       data_filled.std(dim='time'))
+
+    # Aveces aparecen NaN otra vez despues del paso anterior
+    data_normalized = data_normalized.fillna(0)
+
+    # Transformamos la data a (tiempo, spatial) donde spatial = lat*lon
+    data_normalized = data_normalized.stack(spatial=(lat_name, lon_name))
+
+    return data_normalized
+
+
+def AutoVec_Val_EOF(m, var_exp):
+    """
+    Calcula los autovectores y autovalores de la matriz m.
+    Si sklearn está disponible, usa PCA para calcular los valores propios
+    explicados hasta var_exp. Si no, usa numpy (mas lento).
+
+    Parameters:
+    - m: xarray.DataArray o numpy.array con los datos de entrada.
+    - var_exp: Proporción de varianza explicada deseada (en sklearn) o el número
+      de componentes deseado en el cálculo de numpy.
+
+    Returns:
+    - eigvecs: Autovectores de m.
+    - eigvals: Autovalores de m.
+    """
+
+    sklearn_check = False
+    try:
+        from sklearn.decomposition import PCA
+        sklearn_check = True
+    except ImportError:
+        pass
+
+    if sklearn_check:
+        pca = PCA(n_components=var_exp)
+        pca.fit(m.values)
+
+        eigvals = pca.explained_variance_
+        eigvecs = pca.components_.T
+
+    else:
+        print('Sklearn no encontrado')
+        print('Se utilizará numpy: es equivalente pero mucho mas lento para'
+              ' dominios grandes')
+        print(
+            'Algunas componentes pueden diferir en signo entre numpy y sklearn')
+
+        try:
+            cov_matrix = np.cov(m.values, rowvar=False)
+        except:
+            cov_matrix = np.cov(m, rowvar=False)
+
+        eigvals, eigvecs = np.linalg.eigh(cov_matrix)
+
+        # ordenando de mayor a menor
+        idx = eigvals.argsort()[::-1]
+        eigvals = eigvals[idx]
+        eigvecs = eigvecs[:, idx]
+
+        # Selecciona componentes hasta completar var_exp de varianza
+        if isinstance(var_exp, float) and 0 < var_exp <= 1:
+            cumulative_var = np.cumsum(eigvals) / np.sum(eigvals)
+            n_components = np.searchsorted(cumulative_var, var_exp) + 1
+        else:
+            n_components = var_exp
+
+        eigvals = eigvals[:n_components]
+        eigvecs = eigvecs[:, :n_components]
+
+    return eigvecs, eigvals
+
+
+def CCA(X, Y, var_exp=0.7):
+    """
+    Correlación canonica entre X e Y
+    - Normaliza X, Y
+    - prefilstra con EOF el numero de cp para explicar var_exp
+    - CCA
+
+    Parametros:
+    X xr.DataArray o Xr.DataSet, de dimension (t, x)
+    Y xr.DataArray o Yr.DataSet, de dimension (t, y)
+    var_exp float, default = 0.7 varianza que se quiere retener.
+
+    return (pueden tener varios nombres...)
+    todos numpy.ndarray
+    P: mapas canonicos de X
+    Q: mapas canonicos de Y
+    heP: varianza heterogenea
+    heQ: varianza heterogena
+    S: valores singulares/correlacion entre A y B
+    A: vectores canonicos de X
+    B: vectores canonicos de Y
+    """
+    # Normalizado
+    X = normalize_and_fill(X)
+    Y = normalize_and_fill(Y)
+
+    tx = X.shape[0]
+    ty = Y.shape[0]
+
+    if tx != ty:
+        print('La dimensión tiempo de X e Y tiene que tener la misma longitud')
+        P = Q = heP = heQ = S = A = B = None
+
+    else:
+
+        if var_exp > 1:
+            var_exp = var_exp / 100
+
+        # Eof
+        Vx, ux = AutoVec_Val_EOF(X, var_exp)
+        Vy, uy = AutoVec_Val_EOF(Y, var_exp)
+
+        try:
+            X = X.values @ Vx
+        except:
+            X = X @ Vx
+        X = X - np.mean(X, axis=0)
+        X = X / np.sqrt(ux)
+
+        try:
+            Y = Y.values @ Vy
+        except:
+            Y = Y @ Vy
+        Y = Y - np.mean(Y, axis=0)
+        Y = Y / np.sqrt(uy)
+
+        # CCA
+        Cxy = (X.T @ Y) / (X.shape[0] - 1)
+
+        U, S, V = np.linalg.svd(Cxy, full_matrices=False)
+
+        P = (Vx * np.sqrt(ux)) @ U
+        Q = (Vy * np.sqrt(uy)) @ V.T
+
+        A = X @ U
+        B = Y @ V.T
+
+        heP = P * S
+        heQ = Q * S
+
+    return P, Q, heP, heQ, S, A, B
+
+def CCA_mod(X, X_test, Y, var_exp=0.7):
+    """
+    Reconstruye el predictando Y a partir de X en X_test
+
+    Parametros:
+    X xr.DataArray o Xr.DataSet, de dimension (t, x)
+    Y xr.DataArray o Yr.DataSet, de dimension (t, y)
+    var_exp float, default 0.7 varianza que se quiere retener.
+
+    return:
+    ajd numpy.ndarray dim=(tiempos_reconstruidos, puntos_reticula, modos)
+    B_verif np.ndarray vector canonico para la reconstruccion
+    """
+
+    P, Q, heP, heQ, S, A, B = CCA(X, Y, var_exp)
+
+    # Normalizando
+    X_training = normalize_and_fill(X)
+    X_verif = normalize_and_fill(X_test)
+
+    Y_training = normalize_and_fill(Y)
+
+    # EOF
+    Vx, ux = AutoVec_Val_EOF(X_training, P.shape[1])
+    Vy, uy = AutoVec_Val_EOF(Y_training, Q.shape[1])
+
+    Tx = X_training.values @ Vx
+    Tx = Tx - np.mean(Tx, axis=0)
+    Tx = Tx / np.sqrt(ux)
+
+    Txx = X_verif.values @ Vx
+    Txx = Txx - np.mean(Tx, axis=0)
+    Txx = Txx / np.sqrt(ux)
+
+    Ty = Y_training.values @ Vy
+    Ty = Ty - np.mean(Ty, axis=0)
+    Ty = Ty / np.sqrt(ux)
+
+    # CCA
+    Cxy = (Tx.T @ Ty) / (Tx.shape[0] - 1)
+    U, S, V = np.linalg.svd(Cxy, full_matrices=False)
+
+    VV = (Vy * np.sqrt(uy)) @ V.T
+
+    # Esto lo se usa para algo?
+    # UU = (Vx * np.sqrt(ux)) @ U
+    # A = Tx @ U
+    # B = Ty @ V.T
+
+    B_verif = Txx @ U
+
+    # Acomodando los campos resultantes de forma practica
+    adj = np.zeros((B_verif.shape[0], VV.shape[0], B_verif.shape[1]))
+    aux = B_verif * S
+
+    for year in range(B_verif.shape[0]):
+        for mod in range(B_verif.shape[1]):
+            adj[year, :, mod] = np.outer(aux[year, mod], VV[:, mod])
+
+    return adj, B_verif
 # ---------------------------------------------------------------------------- #
