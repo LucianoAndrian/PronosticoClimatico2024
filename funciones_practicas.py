@@ -8,6 +8,7 @@ from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 import cartopy.crs as ccrs
 import pandas as pd
 import statsmodels.api as sm
+import regionmask
 
 # ---------------------------------------------------------------------------- #
 # funciones auxiliares
@@ -808,7 +809,7 @@ def CCA_mod(X, X_test, Y, var_exp=0.7):
 
     VV = (Vy * np.sqrt(uy)) @ V.T
 
-    # Esto lo se usa para algo?
+    # Esto se usa para algo?
     # UU = (Vx * np.sqrt(ux)) @ U
     # A = Tx @ U
     # B = Ty @ V.T
@@ -825,3 +826,380 @@ def CCA_mod(X, X_test, Y, var_exp=0.7):
 
     return adj, B_verif
 # ---------------------------------------------------------------------------- #
+
+def Media_Desvio_CV_Observaciones(data):
+    """
+    Calcula la media y desvio estandar usando validación cruzada de 1 año
+
+    Parametros:
+    data xr.dataarray
+
+    return
+    mean xr.dataarray: media para cada punto de reticula
+    sd xr.dataarray: desvio estandar para cada punto de reticula
+    """
+    for t in data.time.values:
+        data_no_t = data.where(data.time != t, drop=True)
+
+        mean_no_t = data_no_t.mean(['time'])
+        sd_no_t = data_no_t.std(['time'])
+
+        if t == data.time.values[0]:
+            mean_no_t_final = mean_no_t
+            sd_no_t_final = sd_no_t
+        else:
+            mean_no_t_final = xr.concat(
+                [mean_no_t_final, mean_no_t], dim='time')
+            sd_no_t_final = xr.concat(
+                [sd_no_t_final, sd_no_t], dim='time')
+
+    mean = mean_no_t_final.mean('time')
+    sd = sd_no_t_final.mean('time')
+
+    return mean, sd
+
+
+def Calibracion_MediaSD(mod, obs):
+    """
+    Calibra removiendo la media y desvio standard del modelo y luego
+    multiplicando y sumando el desvio y la media observada, respectivamente
+
+    Parametros:
+    mod xr.dataarray o xr.dataset
+    obs xr.dataarray o xr.dataset
+
+    Return:
+    calibrated_t xr.dataset o xr.dataset de la mismas dimenciones que mod
+    """
+
+    import warnings
+    warnings.simplefilter("ignore", category=RuntimeWarning)
+
+    obs_mean, obs_sd = Media_Desvio_CV_Observaciones(obs)
+
+    if 'r' in mod.dims:
+        for r_e in mod.r.values:
+            for t in mod.time.values:
+
+                mod_r_t = mod.sel(time=t, r=r_e)
+
+                aux = mod.where(mod.r != r_e, drop=True)
+                mod_no_r_t = aux.where(aux.time != t, drop=True)
+
+                mean_no_r_t = mod_no_r_t.mean(['time', 'r'])
+                sd_no_r_t = mod_no_r_t.std(['time', 'r'])
+
+                mod_r_t_calibrated = (((mod_r_t - mean_no_r_t) / sd_no_r_t)
+                                       * obs_sd + obs_mean)
+
+                if t == mod.time.values[0]:
+                    calibrated_r_t = mod_r_t_calibrated
+                else:
+                    calibrated_r_t = xr.concat([calibrated_r_t,
+                                                mod_r_t_calibrated],
+                                               dim='time')
+
+            if int(r_e) == int(mod.r.values[0]):
+                calibrated_t = calibrated_r_t
+            else:
+                calibrated_t = xr.concat([calibrated_t, calibrated_r_t], dim='r')
+
+    else:
+        calibrated_t = None
+
+    return calibrated_t
+
+
+def Quantile_CV(data, quantiles=[0.33, 0.66]):
+
+    """
+    Calcula los quantiles para cada punto de reticula
+
+    Parametros:
+    data xr.dataarray o xr.dataset
+    quantiles list: valores de los quaniles a calcular, 0.33 y 0.66 por default
+
+    return
+    data_q_t xr.dataarray o xr.dataset de los campos para cada quantile
+    """
+
+    for t in data.time.values:
+
+        data_no_t = data.where(data.time != t, drop=True)
+
+        data_q = data_no_t.quantile(quantiles, dim='time')
+
+        if t == data.time.values[0]:
+            data_q_t = data_q
+        else:
+            data_q_t = xr.concat([data_q_t, data_q], dim='time')
+
+    data_q_t = data_q_t.mean('time')
+
+    return data_q_t
+
+
+def Prono_Qt(modelo, fecha_pronostico, obs_referencia=None):
+
+    """
+    Calcula la categoria mas probable de un pronostico en funcion de los
+    terciles climatologicos.
+
+    Parametros
+    modelo (xr.dataarray): tdo el modelo, sus años y sus miembros
+    de ensamble
+    fecha_pronostico (cftime._cftime.Datetime360Day): fecha que se quiere
+    pronosticar.
+    obs_referencia (xr.dataset o xr.dataarrat); se usaran para calcular los
+    terciles climatologicos siempre que este argumento no sea None
+    En ese caso, se asume que el modelo no está calibrado y los terciles se
+    calculan a partir de la media del ensamble.
+
+    return:
+    categorias xr.dataarray con las tres categorias y sus valores
+
+    """
+    categorias = None
+    error = False
+
+    prono = modelo.sel(time=fecha_pronostico)
+    aux = modelo.where(modelo.time != fecha_pronostico, drop=True)
+    modelo = aux.where(aux.time != fecha_pronostico, drop=True)
+
+    if obs_referencia is not None:
+        print('observaciones not None: se asume modelo calibrado')
+        print('Se usarán los terciles observados')
+
+        anios_mod = modelo.time.dt.year
+        obs = obs_referencia.sel(
+            time=obs_referencia.time.dt.year.isin(anios_mod))
+        q_33_66 = Quantile_CV(obs, quantiles=[0.33, 0.66])
+
+        var_name = list(obs_referencia.data_vars)[0]
+
+    elif obs_referencia is None:
+        print('observaciones is None: se asume modelo sin calibrar')
+        print('Se usarán los terciles del modelo. Toma más tiempo...')
+
+        q_33_66 = Quantile_CV(modelo, quantiles=[0.33, 0.66])
+        var_name = list(modelo.data_vars)[0]
+
+    else:
+        print('Error, revisar argumentos de entrada')
+        error = True
+
+    if error is False:
+        # Extraer los cuantiles
+        q_33 = q_33_66[var_name].sel(quantile=0.33)
+        q_66 = q_33_66[var_name].sel(quantile=0.66)
+
+        # Comparar cada miembro del ensamble con los cuantiles
+        below = (prono[var_name] < q_33).sum(dim='r') / len(prono.r.values)
+        normal = ((prono[var_name] >= q_33) & (prono[var_name] <= q_66)).sum(
+            dim='r') / len(prono.r.values)
+        above = (prono[var_name] > q_66).sum(dim='r') / len(prono.r.values)
+
+        # las tres categorias a una variable
+        categorias = xr.concat([below.drop_vars('quantile'),
+                                normal,
+                                above.drop_vars('quantile')],
+                               dim="category")
+
+        categorias = categorias.assign_coords(
+            category=["below", "normal", "above"])
+
+    return categorias
+
+
+def Prono_AjustePDF(modelo, fecha_pronostico, obs_referencia=None):
+
+    """
+    Calcula la categoria mas probable de un pronostico en funcion de los
+    terciles climatologicos derivaddos del ajuste guassiano.
+
+    Parametros:
+    modelo (xr.dataarray): tdo el modelo, sus años y sus miembros
+    de ensamble
+    fecha_pronostico (cftime._cftime.Datetime360Day): fecha que se quiere
+    pronosticar.
+    obs_referencia (xr.dataset o xr.dataarrat); se usaran para calcular la pdf
+    climatologica siempre que este argumento no sea None
+    En ese caso, se asume que el modelo no está calibrado y la pdf se
+    calculara a partir de la media del ensamble.
+
+    return:
+    categorias xr.dataarray con las tres categorias y sus valores
+    """
+    import scipy.stats as stats
+
+    prono = modelo.sel(time=fecha_pronostico)
+    modelo = modelo.where(modelo.time != fecha_pronostico, drop=True)
+
+    anios_mod = modelo.time.dt.year
+
+    if obs_referencia is None:
+        print('terciles modelo')
+        data_clim = modelo
+        dim_metrics = ['time', 'r']
+    else:
+        print('terciles observados')
+        data_clim = obs_referencia
+        dim_metrics = ['time']
+        data_clim = data_clim.sel(time=data_clim.time.dt.year.isin(anios_mod))
+
+    var_name = list(data_clim.data_vars)[0]
+
+    prono_mean = prono.mean('r')[var_name]
+    prono_sd = prono.std('r')[var_name]
+
+    tercil_1_f = []
+    tercil_2_f = []
+    for t in data_clim.time.values:
+        data_clim_aux = data_clim.where(data_clim.time != t, drop=True)
+
+        clim_mean = data_clim_aux.mean(dim_metrics)[var_name]
+        clim_std = data_clim_aux.std(dim_metrics)[var_name]
+
+        # Terciles de las distribuciones de las pdf
+        # no hace falta tener explicitamente la pdf definida
+        # Acá calcula los terciles de una distribucion nornmal con le media y
+        # el desvio estandar climatologico.
+        tercil_1_f.append(stats.norm.ppf(1 / 3, clim_mean, clim_std))
+        tercil_2_f.append(stats.norm.ppf(2 / 3, clim_mean, clim_std))
+
+    tercil_1 = xr.DataArray(tercil_1_f).mean('dim_0')
+    tercil_2 = xr.DataArray(tercil_2_f).mean('dim_0')
+
+
+    # probabilidades de que la pdf del pronostico esté en cada categoria
+    # definida por los terciles
+    below = stats.norm.cdf(tercil_1, prono_mean, prono_sd)
+    normal = stats.norm.cdf(tercil_2, prono_mean, prono_sd) - below
+    above = 1 - stats.norm.cdf(tercil_2, prono_mean, prono_sd)
+
+    # las tres categorias a una variable
+    probabilidades_categoria = xr.DataArray(
+        data=np.array([below, normal, above]),
+        dims=['category', 'lat', 'lon'],
+        coords=dict(
+            category=['below', 'normal', 'above'],
+            lon=modelo.lon.values,
+            lat=modelo.lat.values)
+    )
+
+    return probabilidades_categoria
+
+
+def MakeMask(DataArray, dataname='mask'):
+    mask=regionmask.defined_regions.natural_earth_v5_0_0.countries_110.mask(DataArray)
+    mask = xr.where(np.isnan(mask), mask, 1)
+    mask = mask.to_dataset(name=dataname)
+    return mask
+
+
+def Plot_CategoriaMasProbable(data_categorias, variable,
+                               titulo='Categoria más probable',
+                              mask_land=False):
+    """
+    Plotea la salida de Prono_Qt graficando la en cada punto de reticula
+    la categoria mas probable
+
+    Parametros:
+    data_categorias (xr.Dataarray): salida de Prono_Qt
+    variable (str): nombre de la variable, admite prec, pp, precipitacion,
+    temp, tref o temperatura (determina las paletas de colores a usar)
+    titulo (str): titulo de la figura
+
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import ListedColormap
+    from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
+    import cartopy.crs as ccrs
+    import cartopy.feature as cfeature
+    crs_latlon = ccrs.PlateCarree()
+    import warnings
+    warnings.simplefilter("ignore", category=UserWarning)
+
+    fig = plt.figure(figsize=(5.5,6), dpi=100)
+
+    ax = plt.axes(projection=ccrs.PlateCarree(central_longitude=180))
+    ax.set_extent([275, 330, -60, 20], crs=crs_latlon)
+
+    # Categoria mas probable en cada punto de reticula
+    categoria_mas_probable = data_categorias.argmax(dim="category")
+    if mask_land is True:
+        try:
+            mask_land = MakeMask(categoria_mas_probable)
+            categoria_mas_probable = categoria_mas_probable * mask_land.mask
+        except:
+            print('regionmask no instalado, no se ensmacarará el océano')
+            print('se puede instalar en el entorno con pip install regionmask')
+
+    # Paletas de colores para cada categoria
+    if variable == 'pp' or variable == 'prec' or variable == 'precipitacion':
+        colores_below = ListedColormap(
+            plt.cm.YlOrBr(np.linspace(0.2, 0.6, 256)))
+        colores_normal = ListedColormap(
+            plt.cm.Greys(np.linspace(0.3, 0.9, 256)))
+        colores_above = ListedColormap(plt.cm.Blues(np.linspace(0.3, 0.9, 256)))
+    elif variable == 'temp' or variable == 'tref' or variable == 'temperatura':
+        colores_below = ListedColormap(
+            plt.cm.Blues(np.linspace(0.3, 0.9, 256)))
+        colores_normal = ListedColormap(
+            plt.cm.Greys(np.linspace(0.3, 0.9, 256)))
+        colores_above = ListedColormap(plt.cm.Reds(np.linspace(0.2, 0.6, 256)))
+
+
+    for i, (cat, cmap, label) in enumerate(
+            zip([0, 1, 2], [colores_below, colores_normal, colores_above],
+                ["Below", "Normal", "Above"])):
+        mask = categoria_mas_probable == cat
+        im = ax.pcolormesh(data_categorias.lon, data_categorias.lat,
+                         data_categorias.isel(category=cat).where(mask),
+                         vmin=0.4, vmax=1,#=np.arange(0.2, 1.2, 0.2),
+                         transform=crs_latlon, cmap=cmap)
+
+        cbar_ax = fig.add_axes([0.83, 0.17 + 0.25 * i, 0.02, 0.2])
+        cbar = plt.colorbar(im, cax=cbar_ax, extend='both')
+        cbar.set_label(label)
+        cbar.ax.set_yticks([0.4, 0.6, 0.8, 1])
+
+    ax.coastlines(color='k', linestyle='-', alpha=1)
+    ax.add_feature(cfeature.BORDERS, linewidth=0.5)
+    ax.add_feature(cfeature.OCEAN, facecolor='white')
+    ax.set_xticks(np.arange(275, 330, 10), crs=crs_latlon)
+    ax.set_yticks(np.arange(-60, 40, 20), crs=crs_latlon)
+    lon_formatter = LongitudeFormatter(zero_direction_label=True)
+    lat_formatter = LatitudeFormatter()
+    ax.xaxis.set_major_formatter(lon_formatter)
+    ax.yaxis.set_major_formatter(lat_formatter)
+    ax.gridlines(crs=crs_latlon, linewidth=0.3, linestyle='-')
+    ax.tick_params(labelsize=10)
+
+    ax.set_title(titulo, fontsize=12)
+    plt.tight_layout(rect=[0, 0, 0.9, 1])
+    plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
