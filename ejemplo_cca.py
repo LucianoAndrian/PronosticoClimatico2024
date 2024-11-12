@@ -1,13 +1,13 @@
 """
 Ejemplo de uso de funciones de CCA.
 
-
-
 """
 # ---------------------------------------------------------------------------- #
 import numpy as np
 import xarray as xr
-from funciones_practicas import CrossAnomaly_1y, CCA, CCA_mod
+from funciones_practicas import (CrossAnomaly_1y, CCA, CCA_training_testing,
+                                 CCA_calibracion_training_testing, CCA_mod_CV,
+                                 CCA_calibracion_CV)
 
 # Funcion auxiliar para plotear ---------------------------------------------- #
 # (adaptada de PlotContourf_SA)
@@ -159,68 +159,45 @@ Q_da = xr.DataArray(aux, dims=['lat', 'lon', 'cca'],
                             'lon': pp.lon.values})
 Plot(Q_da.sel(cca=0), Q_da.sel(cca=0), np.arange(-1, 1.2, .2), cmap='BrBG')
 
-
 # ---------------------------------------------------------------------------- #
 # Uso de CCA_mod ------------------------------------------------------------- #
 # Similar a CCA(), pero permite reconstruir/pronosticar a partir de un predictor
 # por medio de CCA.
 
-# Creamos training y testing (para reconstruir en ese periodo)
+# AHORA --> CCA_training_testing (CCA_mode, está se usa dentro de esta funcion)
 
-pp_training = pp_or.sel(time=pp_or.time.dt.year.isin(np.arange(1983,2011)))
-pp_testing = pp_or.sel(time=pp_or.time.dt.year.isin(np.arange(2011,2020)))
-slp_training = slp_or.sel(time=slp_or.time.dt.year.isin(np.arange(1983,2011)))
-slp_testing = slp_or.sel(time=slp_or.time.dt.year.isin(np.arange(2011,2020)))
+cca_pp, pp_to_verif = CCA_training_testing(X=slp_or, Y=pp_or, var_exp=0.7,
+                                           anios_training=[1983, 2011],
+                                           anios_testing=[2011, 2020],
+                                           plus_anio=0)
 
-sst_training = sst_or.sel(time=sst_or.time.dt.year.isin(np.arange(1983,2011)))
-sst_testing = sst_or.sel(time=sst_or.time.dt.year.isin(np.arange(2011,2020)))
-#(probar como da reemplazando slp por sst)
-
-var_exp = 0.7 # varianza que queremos retener
-adj, b_verif = CCA_mod(X=slp_training, X_test=slp_testing,
-                       Y=pp_training, var_exp=var_exp)
-
-# Obtenemos
-# adj np.ndarray de dimensiones (tiempo_testing, lon_pp*lat_pp, modos)
-# evolucion temporal de los modos reconstruidos
-print(adj.shape)
-# la organizacion de adj puede ser modificada a gusto en la ultima parte de la
-# funcion CCA_mod para los propositos que se necesiten
-
-# Reorganizo adj para tener (t, lon, lat, modos)
-adj_rs = adj.reshape(adj.shape[0],
-                     len(pp.lat.values),
-                     len(pp.lon.values),
-                     adj.shape[2])
-
-adj_xr = xr.DataArray(adj_rs, dims=['time','lat', 'lon', 'modo'],
-                          coords={'lat': pp.lat.values,
-                                  'lon': pp.lon.values,
-                                  'time': pp_testing.time.values,
-                                  'modo':np.arange(0, adj_rs.shape[-1])})
-
-print(adj_xr.dims)
-
-adj_escalado = adj_xr.sum('modo')*pp_training.std('time').prec/(var_exp**2)
+# plus_anio es unicamente en la situacion que tengamos X en un año y Y en otro
+# algo que puede suceder si trabajamos con DJF o MAM
+# La idea es que si Y está en otro año plus_anio = 1
 
 # Reconstruido
-Plot(adj_xr, adj_escalado.sel(time='2015-11-01')[0,:,:],
+Plot(cca_pp, cca_pp.sel(time='2015-11-01').prec[0,:,:],
      np.arange(-120, 120, 20), cmap='BrBG',
      title='PP - Reconstruido: OND 2015')
 
 # Observado
-observado = pp_testing-pp_training.mean('time')
-Plot(pp_testing, observado.sel(time='2015-11-01').prec[0,:,:],
+Plot(pp_to_verif, pp_to_verif.sel(time='2015-11-01').prec[0,:,:],
      np.arange(-100, 120, 20), cmap='BrBG',
      title='PP - Observado: OND 2015')
 
+# ---------------------------------------------------------------------------- #
+# Uso de CCA con validacion cruzada
+cca_pp_from_slp, pp_to_verif  = CCA_mod_CV(
+    X=slp_or, Y=pp_or, var_exp=0.7, window_years=3)
 
-adj_escalado = adj_xr.sum('modo')*pp_training.std('time').prec
+Plot(cca_pp_from_slp, cca_pp_from_slp.sel(time='2015-11-01').prec[0,:,:],
+     np.arange(-60, 65, 5), cmap='BrBG',
+     title='PP - Pronostico CCA-SLP SON 2015')
 
-# Reconstruido SIN ESCALAR POR LA VARIANZA
-Plot(adj_xr, adj_escalado.sel(time='2015-11-01')[0,:,:],
-     np.arange(-120, 120, 20), cmap='BrBG',
-     title='PP - Reconstruido sin escalar por la varianza: OND 2015')
+Plot(pp_to_verif, pp_to_verif.sel(time='2015-11-01').prec[0,:,:],
+     np.arange(-60, 65, 5), cmap='BrBG',
+     title='PP - Observado SON 2015')
+
 # ---------------------------------------------------------------------------- #
 # ---------------------------------------------------------------------------- #
 # Calibración de Pronostico
@@ -232,80 +209,40 @@ mod_gem_em = mod_gem.mean('r') # media del ensamble
 
 pp_or_aux = ds2.sel(time=ds2.time.dt.month.isin(10)) # pp observada en DJF
 
-# nuevamente separamos en training y testing
-pp_training = pp_or_aux.sel(
-    time=pp_or_aux.time.dt.year.isin(np.arange(1984,2011)))
-pp_testing = pp_or_aux.sel(
-    time=pp_or_aux.time.dt.year.isin(np.arange(2011,2020)))
-mod_gem_em_training = mod_gem_em.sel(
-    time=mod_gem_em.time.dt.year.isin(np.arange(1984,2011)))
-mod_gem_testing = mod_gem.sel(
-    time=mod_gem.time.dt.year.isin(np.arange(2011,2020)))
+mod_gem_cal_pp, pp_to_verif = (
+    CCA_calibracion_training_testing(mod_gem, pp_or_aux, var_exp=0.7,
+                                     anios_training=[1984, 2011],
+                                     anios_testing=[2011, 2020]))
 
-
-var_exp = 0.7 # varianza que queremos retener
-pp_mod_adj = []
-for r in mod_gem.r.values:
-    adj, b_verif = CCA_mod(X=mod_gem_em_training,
-                           X_test=mod_gem_testing.sel(r=r),
-                           Y=pp_training, var_exp=var_exp)
-
-    adj_rs = adj.reshape(adj.shape[0],
-                         len(pp.lat.values),
-                         len(pp.lon.values),
-                         adj.shape[2])
-
-    adj_xr = xr.DataArray(adj_rs, dims=['time', 'lat', 'lon', 'modo'],
-                          coords={'lat': pp.lat.values,
-                                  'lon': pp.lon.values,
-                                  'time': mod_gem_testing.time.values,
-                                  'modo': np.arange(0, adj_rs.shape[-1])})
-
-    # sumamos todos los modos y escalamos para reconstruir los datos
-    adj_xr = adj_xr.sum('modo') * mod_gem_em_training.std('time').prec/(var_exp**2)
-
-    pp_mod_adj.append(adj_xr)
-
-# Concatenamos los valores, le damos valores a la variable "r" y
-# y pasamos a xr.Dataset para tener una variable del mismo tipo que la original
-pp_mod_adj = xr.concat(pp_mod_adj, dim='r')
-pp_mod_adj['r'] = mod_gem_testing['r']
-pp_mod_gem_adj = pp_mod_adj.to_dataset(name='prec')
-
-
-Plot(pp_mod_gem_adj,
-     mod_gem.sel(time='2015-08-01').mean('r').prec[0,:,:]-mod_gem_em.mean('time').prec,
+Plot(mod_gem,
+     mod_gem.sel(time='2015-08-01').mean('r').prec[0,:,:] -mod_gem_em.mean('time').prec,
      np.arange(-60, 65, 5), cmap='BrBG',
      title='PP - Pronostico SON 2015')
 
-Plot(pp_mod_gem_adj, pp_mod_gem_adj.sel(time='2015-08-01').mean('r').prec[0,:,:],
+Plot(mod_gem_cal_pp, mod_gem_cal_pp.sel(time='2015-08-01').mean('r').prec[0,:,:],
      np.arange(-60, 65, 5), cmap='BrBG',
      title='PP - Pronostico Calibrado SON 2015')
 
-Plot(pp_testing,
-     pp_testing.sel(time='2015-10-01').prec[0,:,:]-pp_training.mean('time').prec,
+Plot(pp_to_verif,
+     pp_to_verif.sel(time='2015-10-01').prec[0,:,:],
      np.arange(-60, 65, 5), cmap='BrBG',
      title='PP - Observado SON 2015')
 
+# ---------------------------------------------------------------------------- #
+# Uso de CCA para calibracion del modelo y sus miembros de ensamble con
+# validacion cruzada
 
+mod_gem_cal_pp_cv, pp_to_verif = CCA_calibracion_CV(X_modelo_full=mod_gem,
+                                                    Y=pp_or,
+                                                    var_exp=0.7,
+                                                    window_years=3)
 
+Plot(mod_gem_cal_pp_cv, mod_gem_cal_pp_cv.mean('r').sel(time='2015-11-01').prec[0,:,:],
+     np.arange(-60, 65, 5), cmap='BrBG',
+     title='PP - Pronostico calibrado CV SON 2015')
 
+Plot(pp_to_verif, pp_to_verif.sel(time='2015-11-01').prec[0,:,:],
+     np.arange(-60, 65, 5), cmap='BrBG',
+     title='PP - Observado SON 2015')
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+################################################################################

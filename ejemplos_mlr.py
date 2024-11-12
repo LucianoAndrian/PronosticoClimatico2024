@@ -7,7 +7,7 @@ import numpy as np
 from distributed.comm.ucx import UCXBackend
 
 from funciones_practicas import (PlotContourf_SA, MLR, Compute_MLR_CV, ACC,
-                                 CrossAnomaly_1y)
+                                 CrossAnomaly_1y, MLR_pronostico)
 # ---------------------------------------------------------------------------- #
 # Pronosticos de precipitacion para SON
 mod_cm4 =  xr.open_dataset('~/PronoClim/modelos_seteados/'
@@ -188,7 +188,6 @@ PlotContourf_SA(prec,
                 cmap='BrBG', title='Observado')
 
 # Podemos operar con ellos también: ------------------------------------------ #
-
 # La función requiere que sean xr.DataSet (puede ser facilmente implementado
 # dentro de la función)
 ds_predict =  xr.Dataset(
@@ -205,6 +204,12 @@ PlotContourf_SA(acc_result,
                 acc_result.prec,
                 scale=np.arange(-1, 1.2, 0.2),
                 cmap='BrBG', title='ACC - MLR Forecast - 2011-2020')
+
+# --------------------------- ACTUALIZACION ---------------------------------- #
+# Podemos reconstruir el periodo de testing directamente con
+prec_crop, prec_recostruct = MLR_pronostico(data=prec,
+                                            regre_result=regremodel,
+                                            predictores=predictores_testing)
 
 ################################################################################
 # ---------------------------------------------------------------------------- #
@@ -265,6 +270,17 @@ PlotContourf_SA(mod_gem_years_out,
 mod_gem_years_out.sel(k=k).time
 # estan todos los años pero solo los campos correspondientes a los años del
 # k_fold NO SON NAN.
-################################################################################
+
+# --------------------------- ACTUALIZACION ---------------------------------- #
+# Podemos reconstruir el periodo de testing directamente con MLR_pronostico()
+# Ejemplo usando observaciones:
+mlr = MLR(predictores)
+# Tarda aprox 5min
+regre_result_prec_cv, mod_prec_years_out, predictores_years_out = (
+    Compute_MLR_CV(prec, predictores, window_years=3, intercept=True))
+
+prec_crop, prec_recostruct = MLR_pronostico(data=prec,
+                                     regre_result=regre_result_prec_cv,
+                                     predictores=predictores_years_out)
 ################################################################################
 ################################################################################
