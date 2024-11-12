@@ -8,8 +8,7 @@ from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 import cartopy.crs as ccrs
 import pandas as pd
 import statsmodels.api as sm
-import regionmask
-
+from climpred import HindcastEnsemble
 # ---------------------------------------------------------------------------- #
 # funciones auxiliares
 def verbose_fun(message, verbose=True):
@@ -60,6 +59,7 @@ def Noise(data):
         noise = None
 
     return noise
+
 # ---------------------------------------------------------------------------- #
 def CrossAnomaly_1y(data, norm=False, r=False):
     """
@@ -114,7 +114,6 @@ def CrossAnomaly_1y(data, norm=False, r=False):
                 data_anom = xr.concat([data_anom, aux_anom], dim='time')
 
     return data_anom
-
 
 # ---------------------------------------------------------------------------- #
 def ACC(data1, data2, crossanomaly=False, reference_time_period=None,
@@ -571,8 +570,74 @@ def Compute_MLR_CV(xrds, predictores, window_years, intercept=True):
 
     return regre_result_cv, ds_out_years_cv, predictores_years_out
 
-# ---------------------------------------------------------------------------- #
+def MLR_pronostico(data, regre_result, predictores):
 
+    compute = True
+    if isinstance(predictores, list): # salida comun
+        #len_time_predictores = len(predictores[0].time)
+        data = data.sel(time=data.time.isin(predictores[0].time))
+
+    elif isinstance(predictores, dict): # salida de CV
+        len_time_predictores = len(predictores)
+        # Como tomamos ventanas de años (tiempos) nos van a quedar un numero
+        # de años sin considerar en cada extremo. Si la ventana fue de 3 años,
+        # debemos sacar uno de cada lado
+        remove_time_ext = int((len(data.time) - len_time_predictores) / 2)
+        data = data.isel(time=slice(remove_time_ext, -remove_time_ext))
+    else:
+        print('ERROR: predictores debe ser list o dict')
+        predict_da = None
+        compute = False
+
+    var_name = list(data.data_vars)[0]
+
+    if compute is True:
+        if 'k' in regre_result.dims:
+            pos_med = int((len(predictores['k0'][0].time) - 1) / 2)
+            predict_k = []
+            for k_int, k in enumerate(predictores.keys()):
+                coefmodel = regre_result.sel(k=k_int)
+                predictores_name = list(coefmodel.coef.values)
+
+                indices = predictores[k]
+
+                # modelo
+                predict = coefmodel.sel(coef=predictores_name[0]).drop_vars(
+                    'coef')
+
+                for c, p in enumerate(indices):
+                    p = p.sel(time=p.time[pos_med])
+                    aux = coefmodel.sel(coef=predictores_name[c + 1]) * p[
+                        list(p.data_vars)[0]]
+                    aux = aux.drop_vars('coef')
+                    aux = aux.drop_vars('time')
+                    predict = predict + aux
+
+                predict_k.append(predict)
+
+            predict_da = xr.concat(predict_k, dim='time')
+            predict_da['time'] = data.time.values
+            predict_da = predict_da.to_dataset(name=var_name)
+
+        else:
+            predictores_name = list(regre_result.coef.values)
+            predict = regre_result.sel(coef=predictores_name[0]).drop_vars(
+                'coef')
+            for c, p in enumerate(predictores):
+                # Selección del indice y los valores del predictor en testing
+                aux = regre_result.sel(coef=predictores_name[c + 1]) * p[
+                    list(p.data_vars)[0]]
+
+                aux = aux.drop_vars('coef')  # no deja sumar sino
+
+                predict = predict + aux
+
+            predict_da = predict.to_dataset(name=var_name)
+            predict_da['time'] = data.time.values
+
+    return data, predict_da
+
+# ---------------------------------------------------------------------------- #
 def Weights(data, lon_name='lon', lat_name='lat'):
     """
     Normaliza por pesando por el coseno de la latitud
@@ -583,14 +648,13 @@ def Weights(data, lon_name='lon', lat_name='lat'):
     lat_name str nombre de la dimension latitud
 
     return
-    data xr.DataArray o xr.DataSet pesado \m/
+    data xr.DataArray o xr.DataSet pesado
     """
 
     weights = np.transpose(np.tile(np.cos(data[lat_name] * np.pi / 180),
                                    (len(data[lon_name]), 1)))
     data_w = data * weights
     return data_w
-
 
 def normalize_and_fill(data):
     """
@@ -629,7 +693,6 @@ def normalize_and_fill(data):
     data_normalized = data_normalized.stack(spatial=(lat_name, lon_name))
 
     return data_normalized
-
 
 def AutoVec_Val_EOF(m, var_exp):
     """
@@ -691,7 +754,6 @@ def AutoVec_Val_EOF(m, var_exp):
         eigvecs = eigvecs[:, :n_components]
 
     return eigvecs, eigvals
-
 
 def CCA(X, Y, var_exp=0.7):
     """
@@ -825,8 +887,234 @@ def CCA_mod(X, X_test, Y, var_exp=0.7):
             adj[year, :, mod] = np.outer(aux[year, mod], VV[:, mod])
 
     return adj, B_verif
-# ---------------------------------------------------------------------------- #
 
+def CCA_training_testing(X, Y, var_exp,
+                         anios_training=[1984, 2011],
+                         anios_testing=[2011, 2020],
+                         plus_anio=0):
+    """
+    CCA en periodos de training y testing
+    Parametros:
+    X xr.DataArray o Xr.DataSet
+    Y xr.DataArray o Yr.DataSet
+    var_exp float, default 0.7 varianza que se quiere retener.
+    anios_training list comienzo y final del periodo
+    anios_testing list comienzo y final del periodo
+    plus_anio int si Y está un año siguiente a X plus_anio = 1
+
+    return:
+    mod_adj Xr.DataSet
+    Y_testing-Y_training.mean('time'), Xr.DataSet reconstruccion de
+    anomalias de Y
+    """
+    X_training = X.sel(
+        time=X.time.dt.year.isin(
+            np.arange(anios_training[0], anios_training[-1])))
+
+    X_testing = X.sel(
+        time=X.time.dt.year.isin(
+            np.arange(anios_testing[0], anios_testing[-1])))
+
+    Y_training = Y.sel(
+        time=Y.time.dt.year.isin(
+            np.arange(anios_training[0] + plus_anio,
+                      anios_training[-1] + plus_anio)))
+
+    Y_testing = Y.sel(
+        time=Y.time.dt.year.isin(
+            np.arange(anios_testing[0] + plus_anio,
+                      anios_testing[-1] + plus_anio)))
+
+    adj, b_verif = CCA_mod(X=X_training, X_test=X_testing,
+                           Y=Y_training, var_exp=var_exp)
+
+    adj_rs = adj.reshape(adj.shape[0],
+                         len(Y.lat.values),
+                         len(Y.lon.values),
+                         adj.shape[2])
+
+    adj_xr = xr.DataArray(adj_rs, dims=['time', 'lat', 'lon', 'modo'],
+                          coords={'lat': Y.lat.values,
+                                  'lon': Y.lon.values,
+                                  'time': X_testing.time.values,
+                                  'modo': np.arange(0, adj_rs.shape[-1])})
+
+    adj_xr = (adj_xr.sum('modo') * Y_training.std('time')[list(Y.data_vars)[0]]
+              / (var_exp ** 2))
+    mod_adj = adj_xr.to_dataset(name=list(Y.data_vars)[0])
+    mod_adj['time'] = Y_testing.time.values
+
+    return mod_adj, Y_testing-Y_training.mean('time')
+
+def CCA_calibracion_training_testing(X_modelo_full, Y_observaciones, var_exp,
+                                     anios_training=[1984, 2011],
+                                     anios_testing=[2011, 2020],
+                                     plus_anio=0):
+    """
+    Calibracion CCA en periodos de training y testing
+    Parametros:
+    X_modelo_full xr.DataArray o Xr.DataSet, debe incluir 'r'
+    Y_observaciones xr.DataArray o Yr.DataSet
+    var_exp float, default 0.7 varianza que se quiere retener.
+    anios_training list comienzo y final del periodo
+    anios_testing list comienzo y final del periodo
+    plus_anio int si Y está un año siguiente a X plus_anio = 1
+
+    return:
+    mod_adj Xr.DataSet
+    Y_testing-Y_training.mean('time') Xr.DataSet reconstruccion de
+    anomalias de Y
+    """
+    var_name = list(X_modelo_full.data_vars)[0]
+
+    X_me = X_modelo_full.mean('r')
+    X_training = X_me.sel(
+        time=X_me.time.dt.year.isin(
+            np.arange(anios_training[0], anios_training[-1])))
+
+    X_testing = X_modelo_full.sel(
+        time=X_modelo_full.time.dt.year.isin(
+            np.arange(anios_testing[0], anios_testing[-1])))
+
+    Y_training = Y_observaciones.sel(
+        time=Y_observaciones.time.dt.year.isin(
+            np.arange(anios_training[0]+plus_anio,
+                      anios_training[-1]+plus_anio)))
+
+    Y_testing =Y_observaciones.sel(
+        time=Y_observaciones.time.dt.year.isin(
+            np.arange(anios_testing[0]+plus_anio,
+                      anios_testing[-1]+plus_anio)))
+
+    mod_adj = []
+    for r in X_modelo_full.r.values:
+        adj, b_verif = CCA_mod(X=X_training,
+                               X_test=X_testing.sel(r=r),
+                               Y=Y_training, var_exp=var_exp)
+
+        adj_rs = adj.reshape(adj.shape[0],
+                             len(Y_observaciones.lat.values),
+                             len(Y_observaciones.lon.values),
+                             adj.shape[2])
+
+        adj_xr = xr.DataArray(adj_rs, dims=['time', 'lat', 'lon', 'modo'],
+                              coords={'lat': Y_observaciones.lat.values,
+                                      'lon': Y_observaciones.lon.values,
+                                      'time': X_testing.time.values,
+                                      'modo': np.arange(0, adj_rs.shape[-1])})
+
+        # sumamos todos los modos y escalamos para reconstruir los datos
+        adj_xr = (adj_xr.sum('modo') * X_training.std('time')[var_name]/
+                  (var_exp**2))
+
+        mod_adj.append(adj_xr)
+
+
+    mod_adj = xr.concat(mod_adj, dim='r')
+    mod_adj['r'] = X_testing['r']
+    mod_adj = mod_adj.to_dataset(name=var_name)
+
+    return mod_adj, Y_testing-Y_training.mean('time')
+
+def CCA_mod_CV(X, Y, var_exp, window_years, X_test=None):
+
+    """
+    CCA_mod con CV
+
+    Parametros:
+    X xr.DataArray o Xr.DataSet
+    Y xr.DataArray o xr.DataSet
+    var_exp float, default 0.7 varianza que se quiere retener.
+    window_years (int): ventana de años a usar en la validacion cruzada
+    X_test = xr.DataArray o Yr.DataSet, default None
+    return:
+    mod_adj_ct Xr.DataSet
+    Y_to_verif-Y.mean('time') Xr.DataSet
+    """
+
+    var_name = list(Y.data_vars)[0]
+    total_tiempos = len(X.time)
+
+    mod_adj = []
+    fechas = []
+    fechas_testing = []
+    for i in range(total_tiempos - window_years + 1):
+
+        tiempos_a_omitir = range(i, i + window_years)
+
+        # iteracion 0
+        if X_test is not None:
+            X_testing = X_test.sel(time=X_test.time.values[tiempos_a_omitir])
+        else:
+            X_testing = X.sel(time=X.time.values[tiempos_a_omitir])
+
+        Y_testing = Y.sel(time=Y.time.values[tiempos_a_omitir])
+
+        X_training = X.drop_sel(time=X_testing.time.values)
+        Y_training = Y.drop_sel(time=Y_testing.time.values)
+
+        pos_med = int((len(X_testing.time) - 1) / 2)
+
+        #fechas.append(X_testing.time.values[pos_med])
+        fechas_testing.append(Y_testing.time.values[pos_med])
+
+        adj = CCA_mod(X=X_training, X_test=X_testing,
+                      Y=Y_training, var_exp=var_exp)[0]
+        adj = adj[pos_med,:,:]
+
+        adj_aux = adj.reshape(len(Y.lat.values), len(Y.lon.values),
+                              adj.shape[-1])
+
+        adj_xr = xr.DataArray(adj_aux,
+                              dims=['lat', 'lon', 'modo'],
+                              coords={'lat': Y.lat.values,
+                                      'lon': Y.lon.values,
+                                      'modo': np.arange(0, adj_aux.shape[-1])})
+
+        # sumamos todos los modos y escalamos para reconstruir los datos
+        adj_xr = (adj_xr.sum('modo') * Y_training.std('time')[var_name] /
+                  (var_exp ** 2))
+
+        mod_adj.append(adj_xr)
+
+    mod_adj_ct = xr.concat(mod_adj, dim='time')
+    mod_adj_ct['time'] = fechas_testing
+    mod_adj_ct = mod_adj_ct.to_dataset(name=var_name)
+
+    Y_to_verif = Y.sel(time=fechas_testing)
+
+    return mod_adj_ct, Y_to_verif-Y.mean('time')
+
+def CCA_calibracion_CV(X_modelo_full, Y, var_exp, window_years):
+    """
+    Calibracion con CCA_mod_CV, Y=miembros de ensamble en CCA_mod
+
+    Parametros:
+    X_modelo_full xr.DataArray o Xr.DataSet, debe incluir 'r'
+    Y xr.DataArray o xr.DataSet
+    var_exp float, default 0.7 varianza que se quiere retener.
+    window_years (int): ventana de años a usar en la validacion cruzada
+
+    return:
+    mod_adj_ct Xr.DataSet
+    Y_to_verif-Y.mean('time') Xr.DataSet
+    """
+
+    mod_adj = []
+    for r in X_modelo_full.r.values:
+        adj, Y_to_verif = CCA_mod_CV(X=X_modelo_full.mean('r'),
+                                     X_test=X_modelo_full.sel(r=r),
+                                     Y=Y, var_exp=var_exp,
+                                     window_years=window_years)
+        mod_adj.append(adj)
+
+    mod_adj_xr = xr.concat(mod_adj, dim='r')
+    mod_adj_xr['r'] = X_modelo_full.r.values
+    #mod_adj_xr = mod_adj_xr.to_dataset(name=list(X_modelo_full.data_vars)[0])
+
+    return mod_adj_xr, Y_to_verif
+# ---------------------------------------------------------------------------- #
+# ---------------------------------------------------------------------------- #
 def Media_Desvio_CV_Observaciones(data):
     """
     Calcula la media y desvio estandar usando validación cruzada de 1 año
@@ -857,7 +1145,6 @@ def Media_Desvio_CV_Observaciones(data):
     sd = sd_no_t_final.mean('time')
 
     return mean, sd
-
 
 def Calibracion_MediaSD(mod, obs):
     """
@@ -909,7 +1196,6 @@ def Calibracion_MediaSD(mod, obs):
 
     return calibrated_t
 
-
 def Quantile_CV(data, quantiles=[0.33, 0.66]):
 
     """
@@ -938,8 +1224,8 @@ def Quantile_CV(data, quantiles=[0.33, 0.66]):
 
     return data_q_t
 
-
-def Prono_Qt(modelo, fecha_pronostico, obs_referencia=None):
+def Prono_Qt(modelo, fecha_pronostico, obs_referencia=None,
+             return_quantiles=False, verbose=True):
 
     """
     Calcula la categoria mas probable de un pronostico en funcion de los
@@ -963,12 +1249,19 @@ def Prono_Qt(modelo, fecha_pronostico, obs_referencia=None):
     error = False
 
     prono = modelo.sel(time=fecha_pronostico)
-    aux = modelo.where(modelo.time != fecha_pronostico, drop=True)
-    modelo = aux.where(aux.time != fecha_pronostico, drop=True)
+    try:
+        modelo.time.values == fecha_pronostico
+    except:
+        modelo = modelo.where(
+            ~modelo.time.isin(fecha_pronostico), drop=True)
+
+    # aux = modelo.where(modelo.time != fecha_pronostico, drop=True)
+    # modelo = aux.where(aux.time != fecha_pronostico, drop=True)
 
     if obs_referencia is not None:
-        print('observaciones not None: se asume modelo calibrado')
-        print('Se usarán los terciles observados')
+        if verbose:
+            print('observaciones not None: se asume modelo calibrado')
+            print('Se usarán los terciles observados')
 
         anios_mod = modelo.time.dt.year
         obs = obs_referencia.sel(
@@ -978,14 +1271,15 @@ def Prono_Qt(modelo, fecha_pronostico, obs_referencia=None):
         var_name = list(obs_referencia.data_vars)[0]
 
     elif obs_referencia is None:
-        print('observaciones is None: se asume modelo sin calibrar')
-        print('Se usarán los terciles del modelo. Toma más tiempo...')
+        if verbose:
+            print('observaciones is None: se asume modelo sin calibrar')
+            print('Se usarán los terciles del modelo. Toma más tiempo...')
 
         q_33_66 = Quantile_CV(modelo, quantiles=[0.33, 0.66])
         var_name = list(modelo.data_vars)[0]
 
     else:
-        print('Error, revisar argumentos de entrada')
+        print('Error Prono_Qt, revisar argumentos de entrada')
         error = True
 
     if error is False:
@@ -1008,8 +1302,10 @@ def Prono_Qt(modelo, fecha_pronostico, obs_referencia=None):
         categorias = categorias.assign_coords(
             category=["below", "normal", "above"])
 
-    return categorias
-
+    if return_quantiles:
+        return categorias, q_33_66
+    else:
+        return categorias
 
 def Prono_AjustePDF(modelo, fecha_pronostico, obs_referencia=None):
 
@@ -1033,7 +1329,8 @@ def Prono_AjustePDF(modelo, fecha_pronostico, obs_referencia=None):
     import scipy.stats as stats
 
     prono = modelo.sel(time=fecha_pronostico)
-    modelo = modelo.where(modelo.time != fecha_pronostico, drop=True)
+    modelo = modelo.where(~modelo.time.isin(fecha_pronostico),drop=True)
+    #modelo = modelo.where(modelo.time != fecha_pronostico, drop=True)
 
     anios_mod = modelo.time.dt.year
 
@@ -1089,13 +1386,12 @@ def Prono_AjustePDF(modelo, fecha_pronostico, obs_referencia=None):
 
     return probabilidades_categoria
 
-
 def MakeMask(DataArray, dataname='mask'):
+    import regionmask
     mask=regionmask.defined_regions.natural_earth_v5_0_0.countries_110.mask(DataArray)
     mask = xr.where(np.isnan(mask), mask, 1)
     mask = mask.to_dataset(name=dataname)
     return mask
-
 
 def Plot_CategoriaMasProbable(data_categorias, variable,
                                titulo='Categoria más probable',
@@ -1180,26 +1476,549 @@ def Plot_CategoriaMasProbable(data_categorias, variable,
     plt.tight_layout(rect=[0, 0, 0.9, 1])
     plt.show()
 
+def PlotPcolormesh_SA(data, data_var, scale, cmap, title):
+    """
+    Funcion de ejemplo de ploteo de datos georeferenciados
+
+    Parametros:
+    data (xr.Dataset): del cual se van a tomar los valores de lon y lat
+    data_var (xr.Dataarray): variable a graficar
+    scale (array): escala para plotear contornos
+    cmap (str): nombre de paleta de colores de matplotlib
+    title (str): título del grafico
+    """
+    crs_latlon = ccrs.PlateCarree()
+
+    fig = plt.figure(figsize=(5,6), dpi=100)
+
+    ax = plt.axes(projection=ccrs.PlateCarree(central_longitude=180))
+    ax.set_extent([275, 330, -60, 20], crs=crs_latlon)
+
+    # Contornos
+    im = ax.pcolormesh(data.lon,
+                     data.lat,
+                     data_var,
+                     vmin=np.min(scale), vmax=np.max(scale),
+                     transform=crs_latlon, cmap=cmap)
+
+    # barra de colores
+    cb = plt.colorbar(im, fraction=0.042, pad=0.035, shrink=0.8)
+    cb.ax.tick_params(labelsize=8)
+
+    ax.coastlines(color='k', linestyle='-', alpha=1)
+
+    ax.set_xticks(np.arange(275, 330, 10), crs=crs_latlon)
+    ax.set_yticks(np.arange(-60, 40, 20), crs=crs_latlon)
+    lon_formatter = LongitudeFormatter(zero_direction_label=True)
+    lat_formatter = LatitudeFormatter()
+    ax.xaxis.set_major_formatter(lon_formatter)
+    ax.yaxis.set_major_formatter(lat_formatter)
+
+    ax.gridlines(crs=crs_latlon, linewidth=0.3, linestyle='-')
+    ax.tick_params(labelsize=10)
+
+    plt.title(title, fontsize=12)
+
+    plt.tight_layout()
+    plt.show()
+# ---------------------------------------------------------------------------- #
+def decode_cf(ds, time_var):
+    """Decodes time dimension to CFTime standards."""
+    if ds[time_var].attrs["calendar"] == "360":
+        ds[time_var].attrs["calendar"] = "360_day"
+    ds = xr.decode_cf(ds, decode_times=True)
+    return ds
+
+def SetPronos_Climpred(mod, obs_ref):
+    """
+    Setea "mod" en funcion de obs_ref para trabajar con climpred
+
+    mod xr.Dataset
+    obs_ref xr.Dataset
+
+    return mod seteado
+    """
+    try:
+        try:
+            falso_lead = obs_ref.time.values[0].month-mod.time.values[0].month
+        except:
+            falso_lead = obs_ref.time.dt.month - mod.time.dt.month
+            fecha = mod.time.dt.month
+    except:
+        falso_lead = 0
+
+    try:
+        mod = mod.rename({'time':'init'})
+    except:
+        pass
+
+    try:
+        len(mod.init.values)
+    except:
+        mod = mod.expand_dims(dim='init')
+        #mod['init'] = fecha
+
+    mod = mod.expand_dims(dim=['lead'])
+    try:
+        mod['lead'] = [falso_lead]
+    except:
+        mod['lead'] = falso_lead.values
+
+    mod["lead"].attrs = {"units": "months"}
+
+    try:
+        mod = mod.rename({'r':'member'})
+    except:
+        pass
+
+    return mod
+
+def Comparar_Qt(data, quantiles):
+
+    """
+    (se usa para observaciones)
+    Compara valores de data con los quantiles 0.33 y 0.66
+    data: xr.Dataset
+    quantiles: xr.Dataarray que contengan los quantiles .33 y .66
+
+    return below, nornal, above np.ndarray bnario para cada categoria
+    """
+
+    var_name_q = list(quantiles.data_vars)[0]
+    var_name = list(data.data_vars)[0]
+
+    q_33 = quantiles[var_name_q].sel(quantile=0.33)
+    q_66 = quantiles[var_name_q].sel(quantile=0.66)
+
+    # Comparar cada miembro del ensamble con los cuantiles
+    below = (data[var_name] < q_33)
+    normal = ((data[var_name] >= q_33) & (data[var_name] <= q_66))
+    above = (data[var_name] > q_66)
+
+    # esto asi xq sino aveces corta latitudes entonces x==False, 1, 0
+    below = below.where(below==False, 1, 0)
+    normal = normal.where(normal==False, 1, 0)
+    above = above.where(above==False, 1, 0)
+
+    return below, normal, above
+
+def BSS(modelo, observaciones, fechas_pronostico, calibrado):
+
+    """
+    Brier Skill Score
+
+    modelo xr.Dataset
+    observaciones xr.Dataset
+    fechas_pronostico cftime._cftime.Datetime360Day
+    calibrado bool
+
+    return
+    bss xr.dataset
+
+    """
+
+    if calibrado:
+        prono, q_33_66 = Prono_Qt(modelo=modelo,
+                                  fecha_pronostico=fechas_pronostico,
+                                  obs_referencia=observaciones,
+                                  return_quantiles=True,
+                                  verbose=False)
+        q_33_66_obs = q_33_66
+    else:
+        print('Modelo sin calibrar, el computo tarda bastante más...')
+        prono, q_33_66 = Prono_Qt(modelo=modelo,
+                                  fecha_pronostico=fechas_pronostico,
+                                  obs_referencia=None,
+                                  return_quantiles=True,
+                                  verbose=False)
+
+        q_33_66_obs = Quantile_CV(observaciones)
+
+    try:
+        prono = prono.expand_dims('time')
+    except:
+        pass
+
+    try:
+        anios_mod = []
+        for f in fechas_pronostico:
+            anios_mod.append(f.year)
+    except:
+        anios_mod = fechas_pronostico.year
+
+    obs_below, obs_normal, obs_above = Comparar_Qt(observaciones.sel(
+        time=observaciones.time.dt.year.isin(anios_mod)), q_33_66_obs)
+
+    cts = []
+    for ct in [obs_below, obs_normal, obs_above]:
+        try:
+            cts.append(ct.drop_vars('quantile'))
+        except:
+            cts.append(ct)
+
+    obs_ct = xr.concat(cts, dim='category')
+    obs_ct['category'] = ['below', 'normal', 'above']
+
+    clim_prob = (.33333, .33334, .33333)
+    BSo = []
+    BSf = []
+    #for f in obs_ct.time.values:
+    for f_o, f_f in zip([obs_ct.time.values], [fechas_pronostico]):
+        # BSo ---------------------------------------------------------------- #
+        below = obs_ct.sel(time=f_o, category='below')
+        normal = obs_ct.sel(time=f_o, category='normal')
+        above = obs_ct.sel(time=f_o, category='above')
+
+        aux_bs = (clim_prob[0] - below) ** 2 + \
+                  (clim_prob[1] - normal) ** 2 + \
+                  (clim_prob[2] - above) ** 2
+
+        BSo.append(aux_bs)
+
+        # BSf ---------------------------------------------------------------- #
+        below_f = prono.sel(time=f_f, category='below')
+        normal_f = prono.sel(time=f_f, category='normal')
+        above_f = prono.sel(time=f_f, category='above')
+
+        try:
+            aux_bsf = (below_f - below.values) ** 2 + \
+                      (normal_f - normal.values) ** 2 + \
+                      (above_f - above.values) ** 2
+        except:
+            aux_bsf = (below_f - below) ** 2 + \
+                      (normal_f - normal) ** 2 + \
+                      (above_f - above) ** 2
+
+        BSf.append(aux_bsf)
 
 
+    BSo = xr.concat(BSo, dim='time')
+    BSf = xr.concat(BSf, dim='time')
 
+    BSo = BSo.drop_vars('category')
+    BSf = BSf.drop_vars('category')
 
+    # BSS -------------------------------------------------------------------- #
+    try:
+        bss = 1 - BSf/BSo.values
+    except:
+        # cuando sea una sola fecha va caer aca
+        bss = 1 - BSf / BSo
+        bss['time'] = [fechas_pronostico]
 
+    bss = bss.to_dataset(name='BSS')
+    bss = bss.mean('time')
 
+    return bss
 
+def RPSS(modelo, observaciones, fechas_pronostico, calibrado):
+    """
+    Ranked probability skill score
 
+    modelo xr.Dataset
+    observaciones xr.Dataset
+    fechas_pronostico cftime._cftime.Datetime360Day
+    calibrado bool
 
+    return
+    rpss xr.dataset
 
+    """
+    if calibrado:
+        prono, q_33_66 = Prono_Qt(modelo=modelo,
+                                  fecha_pronostico=fechas_pronostico,
+                                  obs_referencia=observaciones,
+                                  return_quantiles=True,
+                                  verbose=False)
+        q_33_66_obs = q_33_66
+    else:
+        print('Modelo sin calibrar, el computo tarda bastante más...')
+        prono, q_33_66 = Prono_Qt(modelo=modelo,
+                                  fecha_pronostico=fechas_pronostico,
+                                  obs_referencia=None,
+                                  return_quantiles=True,
+                                  verbose=False)
 
+        q_33_66_obs = Quantile_CV(observaciones)
 
+    try:
+        prono = prono.expand_dims('time')
+    except:
+        pass
 
+    try:
+        anios_mod = []
+        for f in fechas_pronostico:
+            anios_mod.append(f.year)
+    except:
+        anios_mod = fechas_pronostico.year
 
+    obs_below, obs_normal, obs_above = Comparar_Qt(observaciones.sel(
+        time=observaciones.time.dt.year.isin(anios_mod)), q_33_66_obs)
 
+    cts = []
+    for ct in [obs_below, obs_normal, obs_above]:
+        try:
+            cts.append(ct.drop_vars('quantile'))
+        except:
+            cts.append(ct)
 
+    obs_ct = xr.concat(cts, dim='category')
+    obs_ct['category'] = ['below', 'normal', 'above']
 
+    clim_prob = (.33333, .33334, .33333)
+    RPSo = []
+    RPSf = []
+    #for f in obs_ct.time.values:
+    for f_o, f_f in zip([obs_ct.time.values], [fechas_pronostico]):
+        # RPSo --------------------------------------------------------------- #
+        below = obs_ct.sel(time=f_o, category='below')
+        normal = obs_ct.sel(time=f_o, category='normal')
+        above = obs_ct.sel(time=f_o, category='above')
 
+        aux_rpso = (clim_prob[0] - below) ** 2 + \
+                  (np.sum(clim_prob[0:2]) - (normal+below)) ** 2 + \
+                  (np.sum(clim_prob) - (above+normal+below)) ** 2
 
+        RPSo.append(aux_rpso)
 
+        # RPSf --------------------------------------------------------------- #
+        below_f = prono.sel(time=f_f, category='below')
+        normal_f = prono.sel(time=f_f, category='normal')
+        above_f = prono.sel(time=f_f, category='above')
 
+        try:
+            aux_rpsf = (below_f - below.values) ** 2 + \
+                       ((normal_f+below_f) -
+                        (normal.values+below.values)) ** 2 + \
+                       ((above_f+normal_f+below_f) -
+                        (above.values+normal.values+below.values)) ** 2
+        except:
+            aux_rpsf = (below_f - below) ** 2 + \
+                       ((normal_f + below_f) - (normal+below)) ** 2 + \
+                       ((above_f+normal_f+below_f)-(above+ normal+ below)) ** 2
 
+        RPSf.append(aux_rpsf)
 
+    RPSo = xr.concat(RPSo, dim='time')
+    RPSf = xr.concat(RPSf, dim='time')
+
+    RPSo = RPSo.drop_vars('category')
+    RPSf = RPSf.drop_vars('category')
+
+    # RPSS ------------------------------------------------------------------- #
+    try:
+        rpss = 1 - RPSf/RPSo.values
+    except:
+        rpss = 1 - RPSf/RPSo
+        rpss['time'] = [fechas_pronostico]
+
+    rpss = rpss.to_dataset(name='RPSS')
+    rpss = rpss.mean('time')
+
+    return rpss
+
+def ROC(modelo, observaciones, fechas_pronostico, calibrado):
+
+    """
+    ROC usando la funcion Prono_Qt para establecer probabilidades
+    para cada categoria
+
+    modelo xr.Dataset
+    observaciones xr.Dataset
+    fechas_pronostico cftime._cftime.Datetime360Day
+    calibrado bool
+
+    return xr.datarray
+    """
+    if calibrado:
+        prono, q_33_66 = Prono_Qt(modelo=modelo,
+                                  fecha_pronostico=fechas_pronostico,
+                                  obs_referencia=observaciones,
+                                  return_quantiles=True,
+                                  verbose=False)
+        q_33_66_obs = q_33_66
+    else:
+        print('Modelo sin calibrar, el computo tarda bastante más...')
+        prono, q_33_66 = Prono_Qt(modelo=modelo,
+                                  fecha_pronostico=fechas_pronostico,
+                                  obs_referencia=None,
+                                  return_quantiles=True,
+                                  verbose=False)
+
+        q_33_66_obs = Quantile_CV(observaciones)
+
+    try:
+        anios_mod = []
+        for f in fechas_pronostico:
+            anios_mod.append(f.year)
+    except:
+        anios_mod = fechas_pronostico.year
+
+    obs_below, obs_normal, obs_above = Comparar_Qt(observaciones.sel(
+        time=observaciones.time.dt.year.isin(anios_mod)), q_33_66_obs)
+
+    ct_roc_result = []
+    for ct, ct_name in zip([obs_below, obs_normal, obs_above],
+                                   ['below', 'normal', 'above']):
+
+        ct_set = SetPronos_Climpred(prono.sel(category=ct_name), ct)
+
+        hindcast = HindcastEnsemble(ct_set)
+
+        try:
+            hindcast = hindcast.add_observations(ct.expand_dims(dim='time'))
+        except:
+            hindcast = hindcast.add_observations(ct)
+
+        result = hindcast.verify(metric='roc',
+                                 comparison='e2o',
+                                 dim=['init', 'lon', 'lat'],
+                                 alignment='maximize',
+                                 bin_edges='continuous',
+                                 return_results="all_as_metric_dim")
+
+        try:
+            ct_roc_result.append(result.drop_vars('quantile'))
+        except:
+            ct_roc_result.append(result)
+
+    roc_result_xr = xr.concat(ct_roc_result, dim='category')
+
+    return roc_result_xr
+
+def REL(modelo, observaciones, fechas_pronostico, calibrado):
+
+    """
+    reliability  usando la funcion Prono_Qt para establecer probabilidades
+    para cada categoria
+
+    modelo xr.Dataset
+    observaciones xr.Dataset
+    fechas_pronostico cftime._cftime.Datetime360Day
+    calibrado bool
+
+    return xr.datarray, tupla, tupla
+    """
+    if calibrado:
+        prono, q_33_66 = Prono_Qt(modelo=modelo,
+                                  fecha_pronostico=fechas_pronostico,
+                                  obs_referencia=observaciones,
+                                  return_quantiles=True,
+                                  verbose=False)
+        q_33_66_obs = q_33_66
+    else:
+        print('Modelo sin calibrar, el computo tarda bastante más...')
+        prono, q_33_66 = Prono_Qt(modelo=modelo,
+                                  fecha_pronostico=fechas_pronostico,
+                                  obs_referencia=None,
+                                  return_quantiles=True,
+                                  verbose=False)
+
+        q_33_66_obs = Quantile_CV(observaciones)
+
+    try:
+        anios_mod = []
+        for f in fechas_pronostico:
+            anios_mod.append(f.year)
+    except:
+        anios_mod = fechas_pronostico.year
+
+    obs_below, obs_normal, obs_above = Comparar_Qt(observaciones.sel(
+        time=observaciones.time.dt.year.isin(anios_mod)), q_33_66_obs)
+
+    ct_rel_result = []
+    for ct, ct_name in zip([obs_below, obs_normal, obs_above],
+                                   ['below', 'normal', 'above']):
+
+        ct_set = SetPronos_Climpred(prono.sel(category=ct_name), ct)
+
+        hindcast = HindcastEnsemble(ct_set)
+
+        try:
+            hindcast = hindcast.add_observations(ct.expand_dims(dim='time'))
+        except:
+            hindcast = hindcast.add_observations(ct)
+
+        result = hindcast.verify(metric='reliability',
+                                 comparison='e2o',
+                                 dim=['init', 'lon', 'lat'],
+                                 alignment='maximize',
+                                 probability_bin_edges=np.arange(-0.1,1.2,0.2))
+
+        try:
+            ct_rel_result.append(result.drop_vars('quantile'))
+        except:
+            ct_rel_result.append(result)
+
+    rel_result_xr = xr.concat(ct_rel_result, dim='category')
+
+    hist_above = np.histogram(prono.sel(category='above'),
+                              bins=[-0.1, 0.1, 0.3,0.5,0.7,0.9,1.1])
+    aux = hist_above[0] / np.prod(prono.sel(category='above').values.shape)
+    hist_above = (aux,[0, 0.2, 0.4, 0.6, 0.8, 1])
+
+    hist_below = np.histogram(prono.sel(category='below'),
+                              bins=[-0.1, 0.1, 0.3,0.5,0.7,0.9,1.1])
+    aux = hist_below[0] / np.prod(prono.sel(category='below').values.shape)
+    hist_below = (aux, [0, 0.2, 0.4, 0.6, 0.8, 1])
+
+    return rel_result_xr, hist_above, hist_below
+
+def PlotROC(roc):
+    """
+    :param roc: salida de ROC()
+    """
+    import matplotlib.pyplot as plt
+
+    fig = plt.figure(figsize=(6, 6), dpi=100)
+    ax = fig.add_subplot(111)
+    ax.plot(roc.sel(metric='false positive rate', category='above').prec,
+            roc.sel(metric='true positive rate', category='above').prec,
+            label='above', color='red', marker='o')
+    ax.plot(roc.sel(metric='false positive rate', category='below').prec,
+            roc.sel(metric='true positive rate', category='below').prec,
+            label='below', color='blue', marker='o')
+
+    auc_below = roc.sel(metric='area under curve', category='below').prec[
+        0].values
+    auc_above = roc.sel(metric='area under curve', category='above').prec[
+        0].values
+
+    ax.set_title(f'AUC below: {auc_below:.3}, AUC above {auc_above:.3}')
+    plt.legend()
+    ax.plot([0, 1], [0, 1], linestyle='--', linewidth=0.5, color='gray')
+    ax.set_xlabel('False Positive Rate')
+    ax.set_ylabel('True Positive Rate')
+    plt.grid()
+    plt.show()
+
+def PlotRelDiag(rel, hist_above, hist_below):
+    """
+    rel, hist_above, hist_below salidas de REL()
+    """
+    import matplotlib.pyplot as plt
+
+    fig = plt.figure(figsize=(6, 6), dpi=100)
+    ax = fig.add_subplot(111)
+    ax.plot(rel.sel(category='below').forecast_probability,
+            rel.sel(category='below').prec,
+            label='below', color='blue', marker='o')
+    ax.plot(rel.sel(category='above').forecast_probability,
+            rel.sel(category='above').prec,
+            label='above', color='red', marker='o')
+
+    ax.plot(hist_above[1], hist_above[0], color='red',
+            linestyle='--', linewidth=0.8)
+    ax.plot(hist_below[1], hist_below[0], color='blue',
+            linestyle='--', linewidth=0.8)
+
+    ax.set_title(f'Reliability')
+    plt.legend()
+    ax.plot([0, 1], [0, 1], linestyle='--', linewidth=0.5, color='gray')
+    ax.set_xlabel('Forecast Probability')
+    ax.set_ylabel('Observed Relative Frequency')
+    plt.grid()
+    plt.show()
+# ---------------------------------------------------------------------------- #
+# ---------------------------------------------------------------------------- #
