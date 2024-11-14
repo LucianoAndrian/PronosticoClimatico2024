@@ -8,7 +8,7 @@ import numpy as np
 from funciones_practicas import (Calibracion_MediaSD, Prono_Qt, Prono_AjustePDF,
                                  Plot_CategoriaMasProbable, PlotContourf_SA)
 # ---------------------------------------------------------------------------- #
-ruta = '~/Facultad/Doc/PronoClimatico_testeos/'
+ruta = '~/PronoClim/'
 
 # Pronosticos para SON
 mod_cm4_prec =  xr.open_dataset(
@@ -150,6 +150,5 @@ Plot_CategoriaMasProbable(data_categorias=prono_prob_cm4,
                           variable='prec', # para el color de las categorias
                           titulo=f"Pronostico probabilistico CanCM4i-IC3 - SON "
                                  f"{fecha_pronostico.year} \n Ajuste Gaussiano")
-
 # ---------------------------------------------------------------------------- #
 # ---------------------------------------------------------------------------- #

@@ -33,7 +33,7 @@ ds3 = ds3.sel(lon=slice(210,320), lat=slice(-20,-75))
 slp_aso = ds3.sel(time=ds3.time.dt.month.isin(9))
 
 mod_gem =  (xr.open_dataset(f'~/PronoClim/modelos_seteados/'
-                            f'prec_CMC-GEM5-NEMO_SON.nc')*91/3) # mm/mes
+                            f'prec_CMC-CanCM4i-IC3_SON.nc')*91/3) # mm/mes
 
 # indices
 n34 = xr.open_dataset('~/PronoClim/indices_nc/nino34_mmean.nc')
@@ -163,7 +163,7 @@ for metrica in ['mae', 'rmse', 'bias', 'spearman_r']:
                              comparison='e2o', dim='init',
                              alignment='maximize')
 
-    PlotContourf_SA(data=result, data_var=result.prec,
+    PlotContourf_SA(data=result, data_var=result.tref,
                     scale=np.linspace(result.prec.min(), result.prec.max(), 13),
                     cmap='Spectral_r', title=metrica)
 
@@ -183,7 +183,15 @@ calibrado = True # IMPORTANTE! Determina como se calculan los quantiles!
 fechas_pronostico = pronostico.time.values
 
 # BSS ------------------------------------------------------------------------ #
-bss_forecast = BSS(pronostico, verificacion, fechas_pronostico, calibrado)
+bss_forecast = BSS(pronostico, verificacion, fechas_pronostico, calibrado,
+                   funcion_prono='Prono_Qt')
+
+PlotContourf_SA(data=bss_forecast, data_var=bss_forecast.BSS,
+                scale=np.arange(-0.4, 1.2, 0.2),
+                cmap='Spectral_r', title='BSS')
+
+bss_forecast = BSS(pronostico, verificacion, fechas_pronostico, calibrado,
+                   funcion_prono='Prono_AjustePDF')
 
 PlotContourf_SA(data=bss_forecast, data_var=bss_forecast.BSS,
                 scale=np.arange(-0.4, 1.2, 0.2),
@@ -197,21 +205,37 @@ PlotPcolormesh_SA(data=bss_forecast, data_var=bss_forecast.BSS,
                   cmap='Spectral_r', title='BSS')
 
 # RPSS ----------------------------------------------------------------------- #
-rpss_forecast = RPSS(pronostico, verificacion, fechas_pronostico, calibrado)
+rpss_forecast = RPSS(pronostico, verificacion, fechas_pronostico, calibrado,
+                   funcion_prono='Prono_Qt')
 
 PlotContourf_SA(data=rpss_forecast, data_var=rpss_forecast.RPSS,
                 scale=np.arange(-0.4, 1.2, 0.2),
                 cmap='Spectral_r', title='RPSS')
 
-# ROC ------------------------------------------------------------------------ #
-c_roc = ROC(pronostico, verificacion, fechas_pronostico, calibrado)
 
+rpss_forecast = RPSS(pronostico, verificacion, fechas_pronostico, calibrado,
+                   funcion_prono='Prono_AjustePDF')
+
+PlotContourf_SA(data=rpss_forecast, data_var=rpss_forecast.RPSS,
+                scale=np.arange(-0.4, 1.2, 0.2),
+                cmap='Spectral_r', title='RPSS')
+# ROC ------------------------------------------------------------------------ #
+c_roc = ROC(pronostico, verificacion, fechas_pronostico, calibrado,
+                   funcion_prono='Prono_Qt')
+PlotROC(c_roc)
+
+c_roc = ROC(pronostico, verificacion, fechas_pronostico, calibrado,
+                   funcion_prono='Prono_AjustePDF')
 PlotROC(c_roc)
 
 # reliability diagram -------------------------------------------------------- #
 c_rel, hist_above, hist_below = REL(pronostico, verificacion, fechas_pronostico,
-                                    calibrado)
+                                    calibrado, funcion_prono='Prono_Qt')
+PlotRelDiag(c_rel, hist_above, hist_below)
 
+
+c_rel, hist_above, hist_below = REL(pronostico, verificacion, fechas_pronostico,
+                                    calibrado, funcion_prono='Prono_AjustePDF')
 PlotRelDiag(c_rel, hist_above, hist_below)
 # ---------------------------------------------------------------------------- #
 ################################################################################

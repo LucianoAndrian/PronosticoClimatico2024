@@ -262,7 +262,7 @@ def ACC_Teorico(data):
     return theo_acc
 
 # ---------------------------------------------------------------------------- #
-def PlotContourf_SA(data, data_var, scale, cmap, title):
+def PlotContourf_SA(data, data_var, scale, cmap, title, mask_land=False):
     """
     Funcion de ejemplo de ploteo de datos georeferenciados
 
@@ -279,6 +279,14 @@ def PlotContourf_SA(data, data_var, scale, cmap, title):
 
     ax = plt.axes(projection=ccrs.PlateCarree(central_longitude=180))
     ax.set_extent([275, 330, -60, 20], crs=crs_latlon)
+
+    if mask_land is True:
+        try:
+            mask_land = MakeMask(data_var)
+            data_var = data_var * mask_land.mask
+        except:
+            print('regionmask no instalado, no se ensmacarará el océano')
+            print('se puede instalar en el entorno con pip install regionmask')
 
     # Contornos
     im = ax.contourf(data.lon,
@@ -1307,7 +1315,8 @@ def Prono_Qt(modelo, fecha_pronostico, obs_referencia=None,
     else:
         return categorias
 
-def Prono_AjustePDF(modelo, fecha_pronostico, obs_referencia=None):
+def Prono_AjustePDF(modelo, fecha_pronostico, obs_referencia=None,
+                    return_quantiles=False, verbose=True):
 
     """
     Calcula la categoria mas probable de un pronostico en funcion de los
@@ -1329,17 +1338,22 @@ def Prono_AjustePDF(modelo, fecha_pronostico, obs_referencia=None):
     import scipy.stats as stats
 
     prono = modelo.sel(time=fecha_pronostico)
-    modelo = modelo.where(~modelo.time.isin(fecha_pronostico),drop=True)
-    #modelo = modelo.where(modelo.time != fecha_pronostico, drop=True)
+    try:
+        modelo.time.values == fecha_pronostico
+    except:
+        modelo = modelo.where(
+            ~modelo.time.isin(fecha_pronostico), drop=True)
 
     anios_mod = modelo.time.dt.year
 
     if obs_referencia is None:
-        print('terciles modelo')
+        if verbose:
+            print('terciles modelo')
         data_clim = modelo
         dim_metrics = ['time', 'r']
     else:
-        print('terciles observados')
+        if verbose:
+            print('terciles observados')
         data_clim = obs_referencia
         dim_metrics = ['time']
         data_clim = data_clim.sel(time=data_clim.time.dt.year.isin(anios_mod))
@@ -1374,17 +1388,40 @@ def Prono_AjustePDF(modelo, fecha_pronostico, obs_referencia=None):
     normal = stats.norm.cdf(tercil_2, prono_mean, prono_sd) - below
     above = 1 - stats.norm.cdf(tercil_2, prono_mean, prono_sd)
 
-    # las tres categorias a una variable
-    probabilidades_categoria = xr.DataArray(
-        data=np.array([below, normal, above]),
-        dims=['category', 'lat', 'lon'],
-        coords=dict(
-            category=['below', 'normal', 'above'],
-            lon=modelo.lon.values,
-            lat=modelo.lat.values)
-    )
+    #below.shape (6, 81, 56)
 
-    return probabilidades_categoria
+    # las tres categorias a una variable
+    if len(below.shape)==3:
+        probabilidades_categoria = xr.DataArray(
+            data=np.array([below, normal, above]),
+            dims=['category', 'time', 'lat', 'lon'],
+            coords=dict(
+                category=['below', 'normal', 'above'],
+                time=fecha_pronostico,
+                lon=modelo.lon.values,
+                lat=modelo.lat.values)
+        )
+    else:
+        probabilidades_categoria = xr.DataArray(
+            data=np.array([below, normal, above]),
+            dims=['category', 'lat', 'lon'],
+            coords=dict(
+                category=['below', 'normal', 'above'],
+                lon=modelo.lon.values,
+                lat=modelo.lat.values)
+        )
+
+    if return_quantiles:
+        q_33_66 = xr.concat([tercil_1, tercil_1], dim='quantile')
+        q_33_66 = q_33_66.rename({'dim_1': 'lat', 'dim_2': 'lon'})
+        q_33_66['lon'] = data_clim.lon.values
+        q_33_66['lat'] = data_clim.lat.values
+        q_33_66['quantile'] = [0.33, 0.66]
+        q_33_66 = q_33_66.to_dataset(name=list(data_clim.data_vars)[0])
+
+        return probabilidades_categoria, q_33_66
+    else:
+        return probabilidades_categoria
 
 def MakeMask(DataArray, dataname='mask'):
     import regionmask
@@ -1421,16 +1458,6 @@ def Plot_CategoriaMasProbable(data_categorias, variable,
     ax = plt.axes(projection=ccrs.PlateCarree(central_longitude=180))
     ax.set_extent([275, 330, -60, 20], crs=crs_latlon)
 
-    # Categoria mas probable en cada punto de reticula
-    categoria_mas_probable = data_categorias.argmax(dim="category")
-    if mask_land is True:
-        try:
-            mask_land = MakeMask(categoria_mas_probable)
-            categoria_mas_probable = categoria_mas_probable * mask_land.mask
-        except:
-            print('regionmask no instalado, no se ensmacarará el océano')
-            print('se puede instalar en el entorno con pip install regionmask')
-
     # Paletas de colores para cada categoria
     if variable == 'pp' or variable == 'prec' or variable == 'precipitacion':
         colores_below = ListedColormap(
@@ -1444,6 +1471,18 @@ def Plot_CategoriaMasProbable(data_categorias, variable,
         colores_normal = ListedColormap(
             plt.cm.Greys(np.linspace(0.3, 0.9, 256)))
         colores_above = ListedColormap(plt.cm.Reds(np.linspace(0.2, 0.6, 256)))
+
+    data_categorias = xr.where(np.isnan(data_categorias), -999, data_categorias)
+
+    # Categoria mas probable en cada punto de reticula
+    categoria_mas_probable = data_categorias.argmax(dim="category")
+    if mask_land is True:
+        try:
+            mask_land = MakeMask(categoria_mas_probable)
+            categoria_mas_probable = categoria_mas_probable * mask_land.mask
+        except:
+            print('regionmask no instalado, no se ensmacarará el océano')
+            print('se puede instalar en el entorno con pip install regionmask')
 
 
     for i, (cat, cmap, label) in enumerate(
@@ -1476,7 +1515,7 @@ def Plot_CategoriaMasProbable(data_categorias, variable,
     plt.tight_layout(rect=[0, 0, 0.9, 1])
     plt.show()
 
-def PlotPcolormesh_SA(data, data_var, scale, cmap, title):
+def PlotPcolormesh_SA(data, data_var, scale, cmap, title, mask_land=False):
     """
     Funcion de ejemplo de ploteo de datos georeferenciados
 
@@ -1488,6 +1527,15 @@ def PlotPcolormesh_SA(data, data_var, scale, cmap, title):
     title (str): título del grafico
     """
     crs_latlon = ccrs.PlateCarree()
+
+    if mask_land is True:
+        try:
+            mask_land = MakeMask(data_var)
+            data_var = data_var * mask_land.mask
+        except:
+            print('regionmask no instalado, no se ensmacarará el océano')
+            print('se puede instalar en el entorno con pip install regionmask')
+
 
     fig = plt.figure(figsize=(5,6), dpi=100)
 
@@ -1602,7 +1650,8 @@ def Comparar_Qt(data, quantiles):
 
     return below, normal, above
 
-def BSS(modelo, observaciones, fechas_pronostico, calibrado):
+def BSS(modelo, observaciones, fechas_pronostico, calibrado,
+        funcion_prono='Prono_AjustePDF'):
 
     """
     Brier Skill Score
@@ -1618,21 +1667,61 @@ def BSS(modelo, observaciones, fechas_pronostico, calibrado):
     """
 
     if calibrado:
-        prono, q_33_66 = Prono_Qt(modelo=modelo,
-                                  fecha_pronostico=fechas_pronostico,
-                                  obs_referencia=observaciones,
-                                  return_quantiles=True,
-                                  verbose=False)
-        q_33_66_obs = q_33_66
-    else:
-        print('Modelo sin calibrar, el computo tarda bastante más...')
-        prono, q_33_66 = Prono_Qt(modelo=modelo,
-                                  fecha_pronostico=fechas_pronostico,
-                                  obs_referencia=None,
-                                  return_quantiles=True,
-                                  verbose=False)
+        if funcion_prono.lower() == 'prono_qt':
+            prono, q_33_66 = Prono_Qt(modelo=modelo,
+                                      fecha_pronostico=fechas_pronostico,
+                                      obs_referencia=observaciones,
+                                      return_quantiles=True,
+                                      verbose=False)
+            q_33_66_obs = q_33_66
+        elif funcion_prono.lower() == 'prono_ajustepdf':
+            prono, q_33_66 = Prono_AjustePDF(modelo=modelo,
+                                             fecha_pronostico=fechas_pronostico,
+                                             obs_referencia=observaciones,
+                                             return_quantiles=True,
+                                             verbose=False)
+            q_33_66_obs = q_33_66
 
-        q_33_66_obs = Quantile_CV(observaciones)
+            try:
+                len(fechas_pronostico.values)  # falla cuando es una sola fecha
+            except:
+                prono['time'] = fechas_pronostico
+
+        else:
+            print("funcion_prono debe ser Prono_Qt o Prono_AjustePDF")
+    else:
+
+        if funcion_prono.lower() == 'prono_qt':
+            print('Modelo sin calibrar, el computo tarda bastante más...')
+            prono, q_33_66 = Prono_Qt(modelo=modelo,
+                                      fecha_pronostico=fechas_pronostico,
+                                      obs_referencia=None,
+                                      return_quantiles=True,
+                                      verbose=False)
+
+            q_33_66_obs = Quantile_CV(observaciones)
+
+        elif funcion_prono.lower() == 'prono_ajustepdf':
+            prono, q_33_66 = Prono_AjustePDF(modelo=modelo,
+                                             fecha_pronostico=fechas_pronostico,
+                                             obs_referencia=None,
+                                             return_quantiles=True,
+                                             verbose=False)
+
+            # Como esto no tarda nada, podemos aplicar otra vez la funcion
+            # tomando las observaciones y q_33_66_obs sera el de las
+            # observaciones
+            q_33_66_obs = Prono_AjustePDF(modelo=modelo,
+                                          fecha_pronostico=fechas_pronostico,
+                                          obs_referencia=observaciones,
+                                          return_quantiles=True,
+                                          verbose=False)[1]
+            try:
+                len(fechas_pronostico.values)  # falla cuando es una sola fecha
+            except:
+                prono['time'] = fechas_pronostico
+        else:
+            print("funcion_prono debe ser Prono_Qt o Prono_AjustePDF")
 
     try:
         prono = prono.expand_dims('time')
@@ -1711,7 +1800,8 @@ def BSS(modelo, observaciones, fechas_pronostico, calibrado):
 
     return bss
 
-def RPSS(modelo, observaciones, fechas_pronostico, calibrado):
+def RPSS(modelo, observaciones, fechas_pronostico, calibrado,
+        funcion_prono='Prono_AjustePDF'):
     """
     Ranked probability skill score
 
@@ -1724,22 +1814,62 @@ def RPSS(modelo, observaciones, fechas_pronostico, calibrado):
     rpss xr.dataset
 
     """
-    if calibrado:
-        prono, q_33_66 = Prono_Qt(modelo=modelo,
-                                  fecha_pronostico=fechas_pronostico,
-                                  obs_referencia=observaciones,
-                                  return_quantiles=True,
-                                  verbose=False)
-        q_33_66_obs = q_33_66
-    else:
-        print('Modelo sin calibrar, el computo tarda bastante más...')
-        prono, q_33_66 = Prono_Qt(modelo=modelo,
-                                  fecha_pronostico=fechas_pronostico,
-                                  obs_referencia=None,
-                                  return_quantiles=True,
-                                  verbose=False)
 
-        q_33_66_obs = Quantile_CV(observaciones)
+    if calibrado:
+        if funcion_prono.lower() == 'prono_qt':
+            prono, q_33_66 = Prono_Qt(modelo=modelo,
+                                      fecha_pronostico=fechas_pronostico,
+                                      obs_referencia=observaciones,
+                                      return_quantiles=True,
+                                      verbose=False)
+            q_33_66_obs = q_33_66
+        elif funcion_prono.lower() == 'prono_ajustepdf':
+            prono, q_33_66 = Prono_AjustePDF(modelo=modelo,
+                                             fecha_pronostico=fechas_pronostico,
+                                             obs_referencia=observaciones,
+                                             return_quantiles=True,
+                                             verbose=False)
+            q_33_66_obs = q_33_66
+
+            try:
+                len(fechas_pronostico.values)  # falla cuando es una sola fecha
+            except:
+                prono['time'] = fechas_pronostico
+
+        else:
+            print("funcion_prono debe ser Prono_Qt o Prono_AjustePDF")
+    else:
+
+        if funcion_prono.lower() == 'prono_qt':
+            print('Modelo sin calibrar, el computo tarda bastante más...')
+            prono, q_33_66 = Prono_Qt(modelo=modelo,
+                                      fecha_pronostico=fechas_pronostico,
+                                      obs_referencia=None,
+                                      return_quantiles=True,
+                                      verbose=False)
+
+            q_33_66_obs = Quantile_CV(observaciones)
+
+        elif funcion_prono.lower() == 'prono_ajustepdf':
+            prono, q_33_66 = Prono_AjustePDF(modelo=modelo,
+                                             fecha_pronostico=fechas_pronostico,
+                                             obs_referencia=None,
+                                             return_quantiles=True,
+                                             verbose=False)
+            # Como esto no tarda nada, podemos aplicar otra vez la funcion
+            # tomando las observaciones y q_33_66_obs sera el de las
+            # observaciones
+            q_33_66_obs = Prono_AjustePDF(modelo=modelo,
+                                          fecha_pronostico=fechas_pronostico,
+                                          obs_referencia=observaciones,
+                                          return_quantiles=True,
+                                          verbose=False)[1]
+            try:
+                len(fechas_pronostico.values)  # falla cuando es una sola fecha
+            except:
+                prono['time'] = fechas_pronostico
+        else:
+            print("funcion_prono debe ser Prono_Qt o Prono_AjustePDF")
 
     try:
         prono = prono.expand_dims('time')
@@ -1818,7 +1948,8 @@ def RPSS(modelo, observaciones, fechas_pronostico, calibrado):
 
     return rpss
 
-def ROC(modelo, observaciones, fechas_pronostico, calibrado):
+def ROC(modelo, observaciones, fechas_pronostico, calibrado,
+        funcion_prono='Prono_AjustePDF'):
 
     """
     ROC usando la funcion Prono_Qt para establecer probabilidades
@@ -1831,22 +1962,73 @@ def ROC(modelo, observaciones, fechas_pronostico, calibrado):
 
     return xr.datarray
     """
-    if calibrado:
-        prono, q_33_66 = Prono_Qt(modelo=modelo,
-                                  fecha_pronostico=fechas_pronostico,
-                                  obs_referencia=observaciones,
-                                  return_quantiles=True,
-                                  verbose=False)
-        q_33_66_obs = q_33_66
-    else:
-        print('Modelo sin calibrar, el computo tarda bastante más...')
-        prono, q_33_66 = Prono_Qt(modelo=modelo,
-                                  fecha_pronostico=fechas_pronostico,
-                                  obs_referencia=None,
-                                  return_quantiles=True,
-                                  verbose=False)
+    parche_nan = False
+    if (True in np.isnan(modelo[list(modelo.data_vars)[0]].values) or
+            True in np.isnan(
+                observaciones[list(observaciones.data_vars)[0]].values)):
+        print('Los datos contienen NaN!')
+        print('El resutlado será aproximado/erroneo')
 
-        q_33_66_obs = Quantile_CV(observaciones)
+        print('Nota: Reemplazar los NAN por un valor constante '
+              'NO SOLUCIONA EL PROBLEMA')
+
+        parche_nan = True
+
+    if calibrado:
+        if funcion_prono.lower() == 'prono_qt':
+            prono, q_33_66 = Prono_Qt(modelo=modelo,
+                                      fecha_pronostico=fechas_pronostico,
+                                      obs_referencia=observaciones,
+                                      return_quantiles=True,
+                                      verbose=False)
+            q_33_66_obs = q_33_66
+        elif funcion_prono.lower() == 'prono_ajustepdf':
+            prono, q_33_66 = Prono_AjustePDF(modelo=modelo,
+                                             fecha_pronostico=fechas_pronostico,
+                                             obs_referencia=observaciones,
+                                             return_quantiles=True,
+                                             verbose=False)
+            q_33_66_obs = q_33_66
+
+            try:
+                len(fechas_pronostico.values)  # falla cuando es una sola fecha
+            except:
+                prono['time'] = fechas_pronostico
+
+        else:
+            print("funcion_prono debe ser Prono_Qt o Prono_AjustePDF")
+    else:
+
+        if funcion_prono.lower() == 'prono_qt':
+            print('Modelo sin calibrar, el computo tarda bastante más...')
+            prono, q_33_66 = Prono_Qt(modelo=modelo,
+                                      fecha_pronostico=fechas_pronostico,
+                                      obs_referencia=None,
+                                      return_quantiles=True,
+                                      verbose=False)
+
+            q_33_66_obs = Quantile_CV(observaciones)
+
+        elif funcion_prono.lower() == 'prono_ajustepdf':
+            prono, q_33_66 = Prono_AjustePDF(modelo=modelo,
+                                             fecha_pronostico=fechas_pronostico,
+                                             obs_referencia=None,
+                                             return_quantiles=True,
+                                             verbose=False)
+            # Como esto no tarda nada, podemos aplicar otra vez la funcion
+            # tomando las observaciones y q_33_66_obs sera el de las
+            # observaciones
+            q_33_66_obs = Prono_AjustePDF(modelo=modelo,
+                                          fecha_pronostico=fechas_pronostico,
+                                          obs_referencia=observaciones,
+                                          return_quantiles=True,
+                                          verbose=False)[1]
+            try:
+                len(fechas_pronostico.values)  # falla cuando es una sola fecha
+            except:
+                prono['time'] = fechas_pronostico
+        else:
+            print("funcion_prono debe ser Prono_Qt o Prono_AjustePDF")
 
     try:
         anios_mod = []
@@ -1864,19 +2046,36 @@ def ROC(modelo, observaciones, fechas_pronostico, calibrado):
 
         ct_set = SetPronos_Climpred(prono.sel(category=ct_name), ct)
 
-        hindcast = HindcastEnsemble(ct_set)
+        try:
+            hindcast = HindcastEnsemble(ct_set)
+        except:
+            # esto va pasar solo con "Prono_AjustePDF"
+            # redondeamos los valores xq la funcion de climpred tarda más sino
+            ct_set.name = list(modelo.data_vars)[0]
+            hindcast = HindcastEnsemble(np.round(ct_set, 1))
 
         try:
             hindcast = hindcast.add_observations(ct.expand_dims(dim='time'))
         except:
             hindcast = hindcast.add_observations(ct)
 
-        result = hindcast.verify(metric='roc',
-                                 comparison='e2o',
-                                 dim=['init', 'lon', 'lat'],
-                                 alignment='maximize',
-                                 bin_edges='continuous',
-                                 return_results="all_as_metric_dim")
+        if parche_nan:
+            result = hindcast.verify(metric='roc',
+                                     comparison='e2o',
+                                     dim=['init'],
+                                     alignment='maximize',
+                                     bin_edges='continuous',
+                                     return_results="all_as_metric_dim")
+
+            result = result.mean(['lon', 'lat'], skipna=True)
+
+        else:
+            result = hindcast.verify(metric='roc',
+                                     comparison='e2o',
+                                     dim=['init', 'lon', 'lat'],
+                                     alignment='maximize',
+                                     bin_edges='continuous',
+                                     return_results="all_as_metric_dim")
 
         try:
             ct_roc_result.append(result.drop_vars('quantile'))
@@ -1887,7 +2086,8 @@ def ROC(modelo, observaciones, fechas_pronostico, calibrado):
 
     return roc_result_xr
 
-def REL(modelo, observaciones, fechas_pronostico, calibrado):
+def REL(modelo, observaciones, fechas_pronostico, calibrado,
+        funcion_prono='Prono_AjustePDF'):
 
     """
     reliability  usando la funcion Prono_Qt para establecer probabilidades
@@ -1900,22 +2100,73 @@ def REL(modelo, observaciones, fechas_pronostico, calibrado):
 
     return xr.datarray, tupla, tupla
     """
-    if calibrado:
-        prono, q_33_66 = Prono_Qt(modelo=modelo,
-                                  fecha_pronostico=fechas_pronostico,
-                                  obs_referencia=observaciones,
-                                  return_quantiles=True,
-                                  verbose=False)
-        q_33_66_obs = q_33_66
-    else:
-        print('Modelo sin calibrar, el computo tarda bastante más...')
-        prono, q_33_66 = Prono_Qt(modelo=modelo,
-                                  fecha_pronostico=fechas_pronostico,
-                                  obs_referencia=None,
-                                  return_quantiles=True,
-                                  verbose=False)
+    parche_nan = False
+    if (True in np.isnan(modelo[list(modelo.data_vars)[0]].values) or
+            True in np.isnan(
+                observaciones[list(observaciones.data_vars)[0]].values)):
+        print('Los datos contienen NaN!')
+        print('El resutlado será aproximado/erroneo')
 
-        q_33_66_obs = Quantile_CV(observaciones)
+        print('Nota: Reemplazar los NAN por un valor constante '
+              'NO SOLUCIONA EL PROBLEMA')
+
+        parche_nan = True
+
+    if calibrado:
+        if funcion_prono.lower() == 'prono_qt':
+            prono, q_33_66 = Prono_Qt(modelo=modelo,
+                                      fecha_pronostico=fechas_pronostico,
+                                      obs_referencia=observaciones,
+                                      return_quantiles=True,
+                                      verbose=False)
+            q_33_66_obs = q_33_66
+        elif funcion_prono.lower() == 'prono_ajustepdf':
+            prono, q_33_66 = Prono_AjustePDF(modelo=modelo,
+                                             fecha_pronostico=fechas_pronostico,
+                                             obs_referencia=observaciones,
+                                             return_quantiles=True,
+                                             verbose=False)
+            q_33_66_obs = q_33_66
+
+            try:
+                len(fechas_pronostico.values)  # falla cuando es una sola fecha
+            except:
+                prono['time'] = fechas_pronostico
+
+        else:
+            print("funcion_prono debe ser Prono_Qt o Prono_AjustePDF")
+    else:
+
+        if funcion_prono.lower() == 'prono_qt':
+            print('Modelo sin calibrar, el computo tarda bastante más...')
+            prono, q_33_66 = Prono_Qt(modelo=modelo,
+                                      fecha_pronostico=fechas_pronostico,
+                                      obs_referencia=None,
+                                      return_quantiles=True,
+                                      verbose=False)
+
+            q_33_66_obs = Quantile_CV(observaciones)
+
+        elif funcion_prono.lower() == 'prono_ajustepdf':
+            prono, q_33_66 = Prono_AjustePDF(modelo=modelo,
+                                             fecha_pronostico=fechas_pronostico,
+                                             obs_referencia=None,
+                                             return_quantiles=True,
+                                             verbose=False)
+            # Como esto no tarda nada, podemos aplicar otra vez la funcion
+            # tomando las observaciones y q_33_66_obs sera el de las
+            # observaciones
+            q_33_66_obs = Prono_AjustePDF(modelo=modelo,
+                                          fecha_pronostico=fechas_pronostico,
+                                          obs_referencia=observaciones,
+                                          return_quantiles=True,
+                                          verbose=False)[1]
+            try:
+                len(fechas_pronostico.values)  # falla cuando es una sola fecha
+            except:
+                prono['time'] = fechas_pronostico
+        else:
+            print("funcion_prono debe ser Prono_Qt o Prono_AjustePDF")
 
     try:
         anios_mod = []
@@ -1933,18 +2184,34 @@ def REL(modelo, observaciones, fechas_pronostico, calibrado):
 
         ct_set = SetPronos_Climpred(prono.sel(category=ct_name), ct)
 
-        hindcast = HindcastEnsemble(ct_set)
+        try:
+            hindcast = HindcastEnsemble(ct_set)
+        except:
+            ct_set.name = list(modelo.data_vars)[0]
+            hindcast = HindcastEnsemble(ct_set)
 
         try:
             hindcast = hindcast.add_observations(ct.expand_dims(dim='time'))
         except:
             hindcast = hindcast.add_observations(ct)
 
-        result = hindcast.verify(metric='reliability',
-                                 comparison='e2o',
-                                 dim=['init', 'lon', 'lat'],
-                                 alignment='maximize',
-                                 probability_bin_edges=np.arange(-0.1,1.2,0.2))
+        if parche_nan:
+
+            result = hindcast.verify(metric='reliability',
+                                     comparison='e2o',
+                                     dim=['init'],
+                                     alignment='maximize',
+                                     probability_bin_edges=np.arange(-0.1, 1.2,
+                                                                     0.2))
+            result = result.mean(['lon','lat'])
+
+        else:
+            result = hindcast.verify(metric='reliability',
+                                     comparison='e2o',
+                                     dim=['init', 'lon', 'lat'],
+                                     alignment='maximize',
+                                     probability_bin_edges=np.arange(-0.1, 1.2,
+                                                                     0.2))
 
         try:
             ct_rel_result.append(result.drop_vars('quantile'))
@@ -1973,16 +2240,17 @@ def PlotROC(roc):
 
     fig = plt.figure(figsize=(6, 6), dpi=100)
     ax = fig.add_subplot(111)
-    ax.plot(roc.sel(metric='false positive rate', category='above').prec,
-            roc.sel(metric='true positive rate', category='above').prec,
+    var_name = list(roc.data_vars)[0]
+    ax.plot(roc.sel(metric='false positive rate', category='above')[var_name],
+            roc.sel(metric='true positive rate', category='above')[var_name],
             label='above', color='red', marker='o')
-    ax.plot(roc.sel(metric='false positive rate', category='below').prec,
-            roc.sel(metric='true positive rate', category='below').prec,
+    ax.plot(roc.sel(metric='false positive rate', category='below')[var_name],
+            roc.sel(metric='true positive rate', category='below')[var_name],
             label='below', color='blue', marker='o')
 
-    auc_below = roc.sel(metric='area under curve', category='below').prec[
+    auc_below = roc.sel(metric='area under curve', category='below')[var_name][
         0].values
-    auc_above = roc.sel(metric='area under curve', category='above').prec[
+    auc_above = roc.sel(metric='area under curve', category='above')[var_name][
         0].values
 
     ax.set_title(f'AUC below: {auc_below:.3}, AUC above {auc_above:.3}')
@@ -1998,14 +2266,14 @@ def PlotRelDiag(rel, hist_above, hist_below):
     rel, hist_above, hist_below salidas de REL()
     """
     import matplotlib.pyplot as plt
-
+    var_name = list(rel.data_vars)[0]
     fig = plt.figure(figsize=(6, 6), dpi=100)
     ax = fig.add_subplot(111)
     ax.plot(rel.sel(category='below').forecast_probability,
-            rel.sel(category='below').prec,
+            rel.sel(category='below')[var_name],
             label='below', color='blue', marker='o')
     ax.plot(rel.sel(category='above').forecast_probability,
-            rel.sel(category='above').prec,
+            rel.sel(category='above')[var_name],
             label='above', color='red', marker='o')
 
     ax.plot(hist_above[1], hist_above[0], color='red',
