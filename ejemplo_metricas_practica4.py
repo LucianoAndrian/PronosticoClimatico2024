@@ -33,7 +33,7 @@ ds3 = ds3.sel(lon=slice(210,320), lat=slice(-20,-75))
 slp_aso = ds3.sel(time=ds3.time.dt.month.isin(9))
 
 mod_gem =  (xr.open_dataset(f'~/PronoClim/modelos_seteados/'
-                            f'prec_CMC-CanCM4i-IC3_SON.nc')*91/3) # mm/mes
+                            f'prec_CMC-GEM5-NEMO_SON.nc')*91/3) # mm/mes
 
 # indices
 n34 = xr.open_dataset('~/PronoClim/indices_nc/nino34_mmean.nc')
