@@ -116,7 +116,7 @@ def CrossAnomaly_1y(data, norm=False, r=False):
     return data_anom
 
 # ---------------------------------------------------------------------------- #
-def ACC(data1, data2, crossanomaly=False, reference_time_period=None,
+def ACC(data1, data2, cvanomaly=False, reference_time_period=None,
         verbose=True):
     """
     Anomaly correlation coefficient
@@ -124,21 +124,21 @@ def ACC(data1, data2, crossanomaly=False, reference_time_period=None,
     parametros:
     data1 (xr.Dataset): con dimensiones lon, lat, time (orden no importa)
     data2 (xr.Dataset): con dimensiones lon, lat, time (orden no importa)
-    crossanomaly (bool): default False, True toma la anomalia cruzada de un año
+    cvanomaly (bool): default False, True toma la anomalia cruzada de un año
     reference_time_period (list, opcional): [año_inicial, año_final]
-    para el cálculo de anomalías. Si es None y crossanomaly es False,
+    para el cálculo de anomalías. Si es None y cvanomaly es False,
     no se calculan anomalías.
     verbose (bool): Si es True, imprime mensajes de procesamiento en terminal.
 
-    - si 'crossanomaly' es True no se tiene en cuenta 'reference_time_period'
-    - si 'crossanomaly' es False y 'reference_time_period' es None,
+    - si 'cvanomaly' es True no se tiene en cuenta 'reference_time_period'
+    - si 'cvanomaly' es False y 'reference_time_period' es None,
     se asume que data1 y data2 ya contienen anomalías.
     - si uno de los data tiene una dimensión más el ACC se va devolver tambien
     para esa dimension. Ej. data1 [lon, lat, time, r], data2 [lon, lat, time]
     el resultado va ser acc [lon, lat, r]
 
     Ejemplo de uso:
-    ACC(data1, data2, crossanomaly=False, reference_time_period=[1985, 2010])
+    ACC(data1, data2, cvanomaly=False, reference_time_period=[1985, 2010])
     """
     # ------------------------------------------------------------------------ #
     # Controles -------------------------------------------------------------- #
@@ -156,7 +156,7 @@ def ACC(data1, data2, crossanomaly=False, reference_time_period=None,
     # ------------------------------------------------------------------------ #
     # Anomalias -------------------------------------------------------------- #
     rtp = reference_time_period
-    if crossanomaly:
+    if cvanomaly:
         verbose_fun('Anomalía cruzada con ventana de 1 año', verbose=verbose)
 
         data1 = CrossAnomaly_1y(data1)
@@ -262,7 +262,8 @@ def ACC_Teorico(data):
     return theo_acc
 
 # ---------------------------------------------------------------------------- #
-def PlotContourf_SA(data, data_var, scale, cmap, title, mask_land=False):
+def PlotContourf_SA(data, data_var, scale, cmap, title, mask_land=False,
+                    mask_andes=False):
     """
     Funcion de ejemplo de ploteo de datos georeferenciados
 
@@ -298,6 +299,20 @@ def PlotContourf_SA(data, data_var, scale, cmap, title, mask_land=False):
     # barra de colores
     cb = plt.colorbar(im, fraction=0.042, pad=0.035, shrink=0.8)
     cb.ax.tick_params(labelsize=8)
+
+    if mask_andes is True:
+        from SetCodes.descarga_topografia import compute
+        topografia = compute()
+
+        from matplotlib import colors
+        andes_cmap = colors.ListedColormap(
+            ['k'])  # una palenta de colores todo negro
+
+        # contorno que va enmascarar el relieve superior a mask_level
+        mask_level = 1300  # metros
+        ax.contourf(topografia.lon, topografia.lat, topografia.topo,
+                    levels=[mask_level, 666666],
+                    cmap=andes_cmap, transform=crs_latlon)
 
     ax.coastlines(color='k', linestyle='-', alpha=1)
 
