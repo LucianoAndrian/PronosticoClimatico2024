@@ -511,6 +511,199 @@ class MLR:
             )
 
         return coef_f
+# ---------------------------------------------------------------------------- #
+def Compute_MLR(predictando=None, mes_predictando=None,
+                predictores=None, meses_predictores=None,
+                predictando_trimestral = True,
+                predictores_trimestral=False,
+                anios_predictores = None):
+    """
+
+    :param predictando:
+    :param predictores:
+    :param intercept:
+    :return:
+    """
+    output0 = None
+    output1 = None
+
+    if (isinstance(predictando, xr.Dataset)
+            and isinstance(predictores, list)
+            and isinstance(mes_predictando, int)
+            and isinstance(meses_predictores, list)):
+
+        variable_predictando = list(predictando.data_vars)[0]
+
+        predictores_set = []
+
+        iter = zip(predictores, meses_predictores,
+                   range(len(predictores)))
+        check_anios_predictores = False
+        if anios_predictores is not None:
+            if (isinstance(anios_predictores, list) and
+                    len(anios_predictores) == len(predictores)):
+                iter = zip(predictores, meses_predictores, anios_predictores)
+                check_anios_predictores = True
+            else:
+                print('Error: "anios_predictores debe ser una lista con tantos '
+                      'iterables como predictores')
+                print(
+                    'Los predictores se setaron con los anios del predictando')
+
+        for p, mp, ap in iter:
+            if predictores_trimestral:
+                p = p.rolling(time=3, center=True).mean()
+
+            if check_anios_predictores:
+                aux_p = p.sel(
+                    time=p.time.dt.year.isin(ap))
+            else:
+                aux_p = p.sel(
+                    time=p.time.dt.year.isin(predictando.time.dt.year))
+
+            aux_p = aux_p.sel(time=aux_p.time.dt.month.isin(mp))
+
+            predictores_set.append(aux_p / aux_p.std())
+
+        if predictando_trimestral:
+            predictando = predictando.rolling(time=3, center=True).mean()
+
+        predictando = predictando.sel(
+            time=predictando.time.dt.month.isin(mes_predictando))
+
+        promedio_mes_predictando = predictando.mean('time')
+
+        predictando = CrossAnomaly_1y(predictando, norm=True)
+
+        mlr = MLR(predictores_set)
+
+        regre = mlr.compute_MLR(predictando[variable_predictando])
+
+        output0 = regre + promedio_mes_predictando[variable_predictando]
+        output1 = regre
+
+    else:
+        print('Error en formato de variables de entradas')
+
+    return output0, output1
+
+def Compute_MLR_training_testing(predictando=None, mes_predictando=None,
+                                 predictores=None, meses_predictores=None,
+                                 anios_training=[1983, 2010],
+                                 anios_testing=[2011, 2020],
+                                 predictando_trimestral = True,
+                                 predictores_trimestral=False,
+                                 anios_predictores_testing = None,
+                                 anios_predictores_training = None,
+                                 training_testing_full = False):
+
+    """
+
+    :param predictando:
+    :param mes_predictando:
+    :param predictores:
+    :param meses_predictores:
+    :param anios_training:
+    :param anios_testing:
+    :param predictando_trimestral:
+    :param predictores_trimestral:
+    :param anios_predictores:
+    :param anios_predictores_testing:
+    :param anios_predictores_training:
+    :return:
+    """
+    output0 = None
+    output1 = None
+
+    if (isinstance(predictando, xr.Dataset)
+            and isinstance(predictores, list)
+            and isinstance(mes_predictando, int)
+            and isinstance(meses_predictores, list)
+            and isinstance(anios_training, list)
+            and isinstance(anios_testing, list)):
+
+        variable_predictando = list(predictando.data_vars)[0]
+
+        year_training = np.arange(anios_training[0], anios_training[-1]+1)
+        year_testing = np.arange(anios_testing[0], anios_testing[-1]+1)
+
+        iter = zip(predictores, meses_predictores,
+                   [year_training, year_training, year_training],
+                   [year_testing, year_testing, year_testing])
+
+        chek_anios_predictores_training = False
+        if (anios_predictores_testing is not None
+            and anios_predictores_training is not None):
+            if isinstance(anios_predictores_training, list) \
+                and isinstance(anios_predictores_testing, list):
+                iter = zip(predictores, meses_predictores,
+                           anios_predictores_training,
+                           anios_predictores_testing)
+                chek_anios_predictores_training = True
+
+        predictores_training = []
+        predictores_testing = []
+        for p, mp, trp, ttp in iter:
+            if predictores_trimestral:
+                p = p.rolling(time=3, center=True).mean()
+
+            aux_p = p.sel(time=p.time.dt.month.isin(mp))
+            aux_p_training = aux_p.sel(time=aux_p.time.dt.year.isin(trp))
+            aux_p_testing = aux_p.sel(time=aux_p.time.dt.year.isin(ttp))
+
+            predictores_training.append(aux_p_training / aux_p_training.std())
+            predictores_testing.append(aux_p_testing / aux_p_testing.std())
+
+        if predictando_trimestral is True:
+            predictando = predictando.rolling(time=3, center=True).mean()
+
+        predictando_training = predictando.sel(
+            time=predictando.time.dt.year.isin(year_training))
+        predictando_training = predictando_training.sel(
+            time=predictando_training.time.dt.month.isin(mes_predictando))
+        promedio_mes_predictando_training = predictando_training.mean('time')
+        predictando_training = CrossAnomaly_1y(predictando_training, norm=True)
+
+        # MLR
+        mlr = MLR(predictores_training)
+        training_regre =  mlr.compute_MLR(
+            predictando_training[variable_predictando])
+        training_regre_full = (training_regre +
+                               promedio_mes_predictando_training[
+                                   variable_predictando])
+
+        if training_testing_full:
+            predictando_testing = predictando.sel(
+                time=predictando.time.dt.year.isin(year_testing))
+            predictando_testing = predictando_testing.sel(
+                time=predictando_testing.time.dt.month.isin(mes_predictando))
+            promedio_mes_predictando_testing = predictando_testing.mean('time')
+            predictando_testing = CrossAnomaly_1y(predictando_testing,
+                                                  norm=True)
+            # MLR
+            mlr = MLR(predictores_testing)
+            testing_regre = mlr.compute_MLR(
+                predictando_testing[variable_predictando])
+            testing_regre_full = (testing_regre +
+                                  promedio_mes_predictando_testing[
+                                      variable_predictando])
+
+            regre = xr.concat([training_regre, testing_regre],dim='time')
+            regre_full = xr.concat([training_regre_full, testing_regre_full],
+                                   dim='time')
+
+            output0 = regre_full
+            output1 = regre
+        else:
+            output0 = training_regre_full
+            output1 = training_regre
+
+    else:
+        print('Error en formato de variables de entradas')
+
+    return output0, output1
+
+
 
 # ---------------------------------------------------------------------------- #
 def Compute_MLR_CV(xrds, predictores, window_years, intercept=True):
@@ -962,8 +1155,8 @@ def CCA_training_testing(X, Y, var_exp,
                                   'time': X_testing.time.values,
                                   'modo': np.arange(0, adj_rs.shape[-1])})
 
-    adj_xr = (adj_xr.sum('modo') * Y_training.std('time')[list(Y.data_vars)[0]]
-              / (var_exp ** 2))
+    adj_xr = (adj_xr.sum('modo') * Y_training.var('time')[list(Y.data_vars)[0]]
+              / (var_exp))
     mod_adj = adj_xr.to_dataset(name=list(Y.data_vars)[0])
     mod_adj['time'] = Y_testing.time.values
 
@@ -1027,8 +1220,8 @@ def CCA_calibracion_training_testing(X_modelo_full, Y_observaciones, var_exp,
                                       'modo': np.arange(0, adj_rs.shape[-1])})
 
         # sumamos todos los modos y escalamos para reconstruir los datos
-        adj_xr = (adj_xr.sum('modo') * X_training.std('time')[var_name]/
-                  (var_exp**2))
+        adj_xr = (adj_xr.sum('modo') * Y_training.var('time')[var_name] /
+                  (var_exp))
 
         mod_adj.append(adj_xr)
 
@@ -1095,8 +1288,8 @@ def CCA_mod_CV(X, Y, var_exp, window_years, X_test=None):
                                       'modo': np.arange(0, adj_aux.shape[-1])})
 
         # sumamos todos los modos y escalamos para reconstruir los datos
-        adj_xr = (adj_xr.sum('modo') * Y_training.std('time')[var_name] /
-                  (var_exp ** 2))
+        adj_xr = (adj_xr.sum('modo') * Y_training.var('time')[var_name]
+                  / (var_exp))
 
         mod_adj.append(adj_xr)
 
