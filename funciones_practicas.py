@@ -115,6 +115,20 @@ def CrossAnomaly_1y(data, norm=False, r=False):
 
     return data_anom
 
+def SingleAnomalia_CV(data, anio):
+    """
+
+    :param data:
+    :param anio:
+    :return:
+    """
+    data_var = list(data.data_vars)[0]
+    data_anio = data.sel(time=data.time.dt.year.isin(anio))
+    media_cv = (data.where(data.time != data_anio.time.values, drop=True)
+                .mean('time', skipna=True))
+    anom =  data_anio - media_cv
+
+    return anom[data_var].squeeze('time')
 # ---------------------------------------------------------------------------- #
 def ACC(data1, data2, cvanomaly=False, reference_time_period=None,
         verbose=True):
@@ -686,7 +700,6 @@ def Compute_MLR_training_testing(predictando=None, mes_predictando=None,
             time=predictando_testing.time.dt.month.isin(mes_predictando))
         promedio_mes_predictando_testing = predictando_testing.mean('time')
 
-        print('# MLR')
         mlr = MLR(predictores_training)
         training_regre =  mlr.compute_MLR(
             predictando_training[variable_predictando])
@@ -698,9 +711,11 @@ def Compute_MLR_training_testing(predictando=None, mes_predictando=None,
                                             training_regre,
                                             predictores_testing)[1]
 
-        testing_reconstruc_full = MLR_pronostico(predictando_testing,
-                                                 training_regre_full,
-                                                 predictores_testing)[1]
+        # testing_reconstruc_full = MLR_pronostico(predictando_testing,
+        #                                          training_regre_full,
+        #                                          predictores_testing)[1]
+
+        testing_reconstruc_full = testing_reconstruc +  promedio_mes_predictando_testing
 
         if reconstruct_full:
             predictando_testing = CrossAnomaly_1y(predictando_testing,
@@ -717,10 +732,12 @@ def Compute_MLR_training_testing(predictando=None, mes_predictando=None,
                                                  testing_regre,
                                                  predictores_training)[1]
 
-            training_reconstruc_full = MLR_pronostico(predictando_training,
-                                                      testing_regre_full,
-                                                      predictores_training)[1]
+            # training_reconstruc_full = MLR_pronostico(predictando_training,
+            #                                           testing_regre_full,
+            #                                           predictores_training)[1]
 
+            training_reconstruc_full = (training_reconstruc +
+                                        promedio_mes_predictando_training)
             forecast = xr.concat([training_reconstruc, testing_reconstruc],
                                  dim = 'time')
 
@@ -742,88 +759,95 @@ def Compute_MLR_training_testing(predictando=None, mes_predictando=None,
     else:
         print('Error en formato de variables de entradas')
 
-    return output0, output1, output2, output3
+    return output0, output1, output2
 
 # ---------------------------------------------------------------------------- #
-def Compute_MLR_CV(xrds, predictores, window_years, intercept=True):
-    """
-    Funcion de EJEMPLO de MLR con validación cruzada.
-
-    La funcion tiene aspectos por mejorar, por ejemplo:
-     - parelización: se podria acelerar el computo de manera considerable
-     - return: la manera en la que se devuelven los resultados busca satisfacer
-     varias utilidades posteriores de ellos pero puede no ser la mas adecuada.
-
-    Parametros:
-    xrds (xr.Dataset): array dim [time, lon, lat] o [time, lon, lat, r]
-        (no importa el orden, cuanto mas dimensiones mas tiempo va tardar)
-    predictores (list): lista con series temporales a usar como predictores
-    window_years (int): ventana de años a usar en la validacion cruzada
-    intercept (bool): True, ordenada al orgine (recomendado usar siempre)
-
-    return
-    1. array de dimensiones [k, lon, lat, coef.] o [k, r, lon, lat, coef]
-    - "k" son los "k-fold": años seleccionados para el modelo lineal
-    - "coef" coeficientes del modelo lineal en cada punto de grilla en orden:
-     constante, b1, b2..., bn
-     2. idem 1. sin "coef" y en "k" estan los años omitidos en cada k-fold
-     3. dict. Diccionario donde cada elemento es una lista de xr.dataarry con
-     los predictores en los años omitods en cada k-fold
-
-     La idea de estos dos ultimos resultados es poder usarlos para realizar y
-     evaluar el pronostico del modelo lineal en cada periodo omitido.
-    """
-
-    total_tiempos = len(xrds.time)
-    predictores_years_out = {}
-    for i in range(total_tiempos - window_years + 1):
-
-        per10 = 10 * round((i / total_tiempos) * 10)
-        if i == 0 or per10 != 10 * round(((i - 1) / total_tiempos) * 10):
-            print(f"{per10}% completado")
-
-        # posicion de tiempos a omitir
-        tiempos_a_omitir = range(i, i + window_years)
-
-        # selección de tiempos
-        ds_cv = xrds.drop_sel(
-            time=xrds.time.values[tiempos_a_omitir[0]:tiempos_a_omitir[-1]+1])
-        ds_out_years = xrds.drop_sel(time=ds_cv.time.values)
-
-        if 'r' in ds_cv.dims:
-            ds_cv = ds_cv - ds_cv.mean(['r','time'])
-            ds_out_years = ds_out_years - ds_cv.mean(['r','time'])
-        else:
-            ds_cv = ds_cv - ds_cv.mean('time')
-            ds_out_years = ds_out_years - ds_cv.mean(['time'])
-
-        predictores_cv = []
-        aux_predictores_out_years = []
-        for p in predictores:
-            aux_predictor = p.drop_sel(
-                time=p.time.values[tiempos_a_omitir[0]:tiempos_a_omitir[-1]+1])
-            aux_predictores_out_years.append(
-                p.drop_sel(time=aux_predictor.time.values))
-
-            predictores_cv.append(aux_predictor)
-
-        predictores_years_out[f"k{i}"] = aux_predictores_out_years
-
-        # MLR
-        mlr = MLR(predictores_cv)
-        regre_result = mlr.compute_MLR(ds_cv[list(ds_cv.data_vars)[0]],
-                                       intercept=intercept)
-
-        if i == 0:
-            regre_result_cv = regre_result
-            ds_out_years_cv = ds_out_years
-        else:
-            regre_result_cv = xr.concat([regre_result_cv, regre_result],
-                                        dim='k')
-            ds_out_years_cv = xr.concat([ds_out_years_cv, ds_out_years],
-                                        dim='k')
-
-    return regre_result_cv, ds_out_years_cv, predictores_years_out
+# def Compute_MLR_CV(xrds, predictores, window_years, intercept=True):
+#     """
+#     Funcion de EJEMPLO de MLR con validación cruzada.
+#
+#     La funcion tiene aspectos por mejorar, por ejemplo:
+#      - parelización: se podria acelerar el computo de manera considerable
+#      - return: la manera en la que se devuelven los resultados busca satisfacer
+#      varias utilidades posteriores de ellos pero puede no ser la mas adecuada.
+#
+#     Parametros:
+#     xrds (xr.Dataset): array dim [time, lon, lat] o [time, lon, lat, r]
+#         (no importa el orden, cuanto mas dimensiones mas tiempo va tardar)
+#     predictores (list): lista con series temporales a usar como predictores
+#     window_years (int): ventana de años a usar en la validacion cruzada
+#     intercept (bool): True, ordenada al orgine (recomendado usar siempre)
+#
+#     return
+#     1. array de dimensiones [k, lon, lat, coef.] o [k, r, lon, lat, coef]
+#     - "k" son los "k-fold": años seleccionados para el modelo lineal
+#     - "coef" coeficientes del modelo lineal en cada punto de grilla en orden:
+#      constante, b1, b2..., bn
+#      2. idem 1. sin "coef" y en "k" estan los años omitidos en cada k-fold
+#      3. dict. Diccionario donde cada elemento es una lista de xr.dataarry con
+#      los predictores en los años omitods en cada k-fold
+#
+#      La idea de estos dos ultimos resultados es poder usarlos para realizar y
+#      evaluar el pronostico del modelo lineal en cada periodo omitido.
+#     """
+#
+#     total_tiempos = len(xrds.time)
+#     predictores_years_out = {}
+#     for i in range(total_tiempos - window_years + 1):
+#
+#         per10 = 10 * round((i / total_tiempos) * 10)
+#         if i == 0 or per10 != 10 * round(((i - 1) / total_tiempos) * 10):
+#             print(f"{per10}% completado")
+#
+#         # posicion de tiempos a omitir
+#         tiempos_a_omitir = range(i, i + window_years)
+#
+#         # selección de tiempos
+#         ds_cv = xrds.drop_sel(
+#             time=xrds.time.values[tiempos_a_omitir[0]:tiempos_a_omitir[-1]+1])
+#         ds_out_years = xrds.drop_sel(time=ds_cv.time.values)
+#
+#         if 'r' in ds_cv.dims:
+#             ds_cv = ds_cv - ds_cv.mean(['r','time'])
+#             ds_out_years = ds_out_years - ds_cv.mean(['r','time'])
+#         else:
+#             ds_cv = ds_cv - ds_cv.mean('time')
+#             ds_out_years = ds_out_years - ds_cv.mean(['time'])
+#
+#         predictores_cv = []
+#         aux_predictores_out_years = []
+#         for p in predictores:
+#             aux_predictor = p.drop_sel(
+#                 time=p.time.values[tiempos_a_omitir[0]:tiempos_a_omitir[-1]+1])
+#             aux_p = p.drop_sel(time=aux_predictor.time.values)
+#             aux_p = aux_p - aux_predictor.mean('time')
+#             aux_p = aux_p / aux_predictor.std('time')
+#             aux_predictores_out_years.append(aux_p)
+#
+#             predictores_cv.append(aux_predictor)
+#
+#         predictores_years_out[f"k{i}"] = aux_predictores_out_years
+#
+#         # MLR
+#         mlr = MLR(predictores_cv)
+#         regre_result = mlr.compute_MLR(ds_cv[list(ds_cv.data_vars)[0]],
+#                                        intercept=intercept)
+#
+#         if i == 0:
+#             regre_result_cv = regre_result
+#             ds_out_years_cv = ds_out_years
+#         else:
+#             regre_result_cv = xr.concat([regre_result_cv, regre_result],
+#                                         dim='k')
+#             ds_out_years_cv = xr.concat([ds_out_years_cv, ds_out_years],
+#                                         dim='k')
+#
+#
+#     training_reconstruc = MLR_pronostico(xrds,
+#                                          regre_result_cv,
+#                                          predictores_years_out)[1]
+#
+#     return regre_result_cv, ds_out_years_cv, predictores_years_out
 
 def MLR_pronostico(data, regre_result, predictores):
 
@@ -893,7 +917,6 @@ def MLR_pronostico(data, regre_result, predictores):
                 predict = predict + aux
 
             predict_da = predict.to_dataset(name=var_name)
-            print(predict_da)
             predict_da['time'] = data.time.values
 
     return data, predict_da
