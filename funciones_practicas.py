@@ -595,7 +595,7 @@ def Compute_MLR_training_testing(predictando=None, mes_predictando=None,
                                  predictores_trimestral=False,
                                  anios_predictores_testing = None,
                                  anios_predictores_training = None,
-                                 training_testing_full = False):
+                                 reconstruct_full = False):
 
     """
 
@@ -614,6 +614,8 @@ def Compute_MLR_training_testing(predictando=None, mes_predictando=None,
     """
     output0 = None
     output1 = None
+    output2 = None
+    output3 = None
 
     if (isinstance(predictando, xr.Dataset)
             and isinstance(predictores, list)
@@ -636,10 +638,22 @@ def Compute_MLR_training_testing(predictando=None, mes_predictando=None,
             and anios_predictores_training is not None):
             if isinstance(anios_predictores_training, list) \
                 and isinstance(anios_predictores_testing, list):
+
+                aux_year_training = []
+                aux_year_testing = []
+                for atr, att in zip(anios_predictores_training,
+                                    anios_predictores_testing):
+
+                    aux_year_training.append(np.arange(atr[0], atr[-1]+1))
+                    aux_year_testing.append(np.arange(att[0], att[-1]+1))
+
                 iter = zip(predictores, meses_predictores,
-                           anios_predictores_training,
-                           anios_predictores_testing)
+                           aux_year_training,
+                           aux_year_testing)
                 chek_anios_predictores_training = True
+            else:
+                print(
+                    'Error: anios_predictores_testing/training deben ser listas')
 
         predictores_training = []
         predictores_testing = []
@@ -657,6 +671,7 @@ def Compute_MLR_training_testing(predictando=None, mes_predictando=None,
         if predictando_trimestral is True:
             predictando = predictando.rolling(time=3, center=True).mean()
 
+        # Training
         predictando_training = predictando.sel(
             time=predictando.time.dt.year.isin(year_training))
         predictando_training = predictando_training.sel(
@@ -664,7 +679,14 @@ def Compute_MLR_training_testing(predictando=None, mes_predictando=None,
         promedio_mes_predictando_training = predictando_training.mean('time')
         predictando_training = CrossAnomaly_1y(predictando_training, norm=True)
 
-        # MLR
+        # Testing
+        predictando_testing = predictando.sel(
+            time=predictando.time.dt.year.isin(year_testing))
+        predictando_testing = predictando_testing.sel(
+            time=predictando_testing.time.dt.month.isin(mes_predictando))
+        promedio_mes_predictando_testing = predictando_testing.mean('time')
+
+        print('# MLR')
         mlr = MLR(predictores_training)
         training_regre =  mlr.compute_MLR(
             predictando_training[variable_predictando])
@@ -672,12 +694,15 @@ def Compute_MLR_training_testing(predictando=None, mes_predictando=None,
                                promedio_mes_predictando_training[
                                    variable_predictando])
 
-        if training_testing_full:
-            predictando_testing = predictando.sel(
-                time=predictando.time.dt.year.isin(year_testing))
-            predictando_testing = predictando_testing.sel(
-                time=predictando_testing.time.dt.month.isin(mes_predictando))
-            promedio_mes_predictando_testing = predictando_testing.mean('time')
+        testing_reconstruc = MLR_pronostico(predictando_testing,
+                                            training_regre,
+                                            predictores_testing)[1]
+
+        testing_reconstruc_full = MLR_pronostico(predictando_testing,
+                                                 training_regre_full,
+                                                 predictores_testing)[1]
+
+        if reconstruct_full:
             predictando_testing = CrossAnomaly_1y(predictando_testing,
                                                   norm=True)
             # MLR
@@ -688,22 +713,36 @@ def Compute_MLR_training_testing(predictando=None, mes_predictando=None,
                                   promedio_mes_predictando_testing[
                                       variable_predictando])
 
-            regre = xr.concat([training_regre, testing_regre],dim='time')
-            regre_full = xr.concat([training_regre_full, testing_regre_full],
-                                   dim='time')
+            training_reconstruc = MLR_pronostico(predictando_training,
+                                                 testing_regre,
+                                                 predictores_training)[1]
 
-            output0 = regre_full
-            output1 = regre
+            training_reconstruc_full = MLR_pronostico(predictando_training,
+                                                      testing_regre_full,
+                                                      predictores_training)[1]
+
+            forecast = xr.concat([training_reconstruc, testing_reconstruc],
+                                 dim = 'time')
+
+            forecast_full = xr.concat([training_reconstruc_full,
+                                       testing_reconstruc_full],
+                                       dim = 'time')
+
+            output0 = (training_regre_full + testing_regre_full)/2
+            output1 = (training_regre + testing_regre)/2
+            output2 = forecast_full
+            output3 = forecast
+
         else:
             output0 = training_regre_full
             output1 = training_regre
+            output2 = testing_reconstruc_full
+            output3 = testing_reconstruc
 
     else:
         print('Error en formato de variables de entradas')
 
-    return output0, output1
-
-
+    return output0, output1, output2, output3
 
 # ---------------------------------------------------------------------------- #
 def Compute_MLR_CV(xrds, predictores, window_years, intercept=True):
@@ -789,17 +828,21 @@ def Compute_MLR_CV(xrds, predictores, window_years, intercept=True):
 def MLR_pronostico(data, regre_result, predictores):
 
     compute = True
-    if isinstance(predictores, list): # salida comun
-        #len_time_predictores = len(predictores[0].time)
-        data = data.sel(time=data.time.isin(predictores[0].time))
-
-    elif isinstance(predictores, dict): # salida de CV
+    if isinstance(predictores, dict): # salida de CV
         len_time_predictores = len(predictores)
         # Como tomamos ventanas de años (tiempos) nos van a quedar un numero
         # de años sin considerar en cada extremo. Si la ventana fue de 3 años,
         # debemos sacar uno de cada lado
         remove_time_ext = int((len(data.time) - len_time_predictores) / 2)
         data = data.isel(time=slice(remove_time_ext, -remove_time_ext))
+    elif isinstance(predictores, list): # Salida comun
+        if len(predictores[0].time.values) == len(data.time.values):
+            pass
+        else:
+            print('Error: "data" debe tener la misma CANTIDAD de tiempos que '
+                  'los predictores')
+            predict_da = None
+            compute = False
     else:
         print('ERROR: predictores debe ser list o dict')
         predict_da = None
@@ -845,10 +888,12 @@ def MLR_pronostico(data, regre_result, predictores):
                     list(p.data_vars)[0]]
 
                 aux = aux.drop_vars('coef')  # no deja sumar sino
+                aux = aux.drop_vars('time')
 
                 predict = predict + aux
 
             predict_da = predict.to_dataset(name=var_name)
+            print(predict_da)
             predict_da['time'] = data.time.values
 
     return data, predict_da
