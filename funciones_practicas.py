@@ -614,6 +614,7 @@ def Compute_MLR(predictando=None, mes_predictando=None,
 
     return output0, output1
 
+
 def Compute_MLR_training_testing(predictando=None, mes_predictando=None,
                                  predictores=None, meses_predictores=None,
                                  anios_training=[1983, 2010],
@@ -1547,7 +1548,6 @@ def CCA_training_testing_2(X, Y, var_exp,
         print('X_anios, Y_anios deben ser None o list, ambos.')
         compute = False
 
-
     if compute is True:
         # Set data
         if X_trim is True:
@@ -1569,56 +1569,62 @@ def CCA_training_testing_2(X, Y, var_exp,
         anios_training = np.arange(anios_training[0], anios_training[-1] + 1)
         anios_testing = np.arange(anios_testing[0], anios_testing[-1] + 1)
 
+        if plus_anio > 0:
+            if anios_testing[-1] > Y_anios[-1]:
+                anios_testing = anios_testing[0:-1]
+
         if reconstruct_full is True:
-            iter = [[anios_training,anios_testing]
+            iter = [[anios_training, anios_testing],
                     [anios_testing, anios_training]]
         else:
             iter = [[anios_training,anios_testing]]
 
         for it_n, it in enumerate(iter):
-            for atr, att in it:
-                print(atr)
-                print(att)
-                X_anios_training = atr
-                X_anios_testing = att
+            atr = it[0]
+            att = it[1]
 
-                Y_anios_training = atr + plus_anio
-                Y_anios_testing = att + plus_anio
+            X_anios_training = atr
+            X_anios_testing = att
 
-                X_training = X.sel(time=X.time.dt.year.isin(X_anios_training))
-                X_testing = X.sel(time=X.time.dt.year.isin(X_anios_testing))
+            Y_anios_training = atr + plus_anio
+            Y_anios_testing = att + plus_anio
 
-                Y_training = Y.sel(time=Y.time.dt.year.isin(Y_anios_training))
-                Y_testing = Y.sel(time=Y.time.dt.year.isin(Y_anios_testing))
+            X_training = X.sel(time=X.time.dt.year.isin(X_anios_training))
+            X_testing = X.sel(time=X.time.dt.year.isin(X_anios_testing))
 
-                adj, b_verif = CCA_mod(X=X_training, X_test=X_testing,
-                                       Y=Y_training, var_exp=var_exp)
+            Y_training = Y.sel(time=Y.time.dt.year.isin(Y_anios_training))
+            Y_testing = Y.sel(time=Y.time.dt.year.isin(Y_anios_testing))
 
-                adj_rs = adj.reshape(adj.shape[0],
-                                     len(Y.lat.values),
-                                     len(Y.lon.values),
-                                     adj.shape[2])
+            adj, b_verif = CCA_mod(X=X_training, X_test=X_testing,
+                                   Y=Y_training, var_exp=var_exp)
 
-                adj_xr = xr.DataArray(adj_rs,
-                                      dims=['time', 'lat', 'lon', 'modo'],
-                                      coords={'lat': Y.lat.values,
-                                              'lon': Y.lon.values,
-                                              'time': X_testing.time.values,
-                                              'modo': np.arange(0,
-                                                                adj_rs.shape[-1])})
+            adj_rs = adj.reshape(adj.shape[0],
+                                 len(Y.lat.values),
+                                 len(Y.lon.values),
+                                 adj.shape[2])
 
-                adj_xr = (adj_xr.sum('modo') * Y_training.var('time')[
-                    list(Y.data_vars)[0]]
-                          / (var_exp))
-                mod_adj = adj_xr.to_dataset(name=list(Y.data_vars)[0])
-                mod_adj['time'] = Y_testing.time.values
+            adj_xr = xr.DataArray(adj_rs,
+                                  dims=['time', 'lat', 'lon', 'modo'],
+                                  coords={'lat': Y.lat.values,
+                                          'lon': Y.lon.values,
+                                          'time': X_testing.time.values,
+                                          'modo': np.arange(0,
+                                                            adj_rs.shape[-1])})
 
-                if it_n == 0:
-                    adj_f = mod_adj
-                else:
-                    adj_f = xr.concat([adj_f, mod_adj], dim='time')
+            adj_xr = (adj_xr.sum('modo') * Y_training.var('time')[
+                list(Y.data_vars)[0]]
+                      / (var_exp))
+            mod_adj = adj_xr.to_dataset(name=list(Y.data_vars)[0])
+            mod_adj['time'] = Y_testing.time.values
 
-                data_to_verif = None
+            if it_n == 0:
+                adj_f = mod_adj
+            else:
+                adj_f = xr.concat([adj_f, mod_adj], dim='time')
+
+            data_to_verif = None
+            #for atr, att in zip(it):
+
 
 
 
@@ -1818,7 +1824,7 @@ def CCA_mod_CV(X, Y, var_exp, window_years, X_test=None):
                                       'modo': np.arange(0, adj_aux.shape[-1])})
 
         # sumamos todos los modos y escalamos para reconstruir los datos
-        adj_xr = (adj_xr.sum('modo') * Y_training.var('time')[var_name]
+        adj_xr = (adj_xr.sum('modo') * Y_training.std('time')[var_name]
                   / (var_exp))
 
         mod_adj.append(adj_xr)
@@ -1830,6 +1836,128 @@ def CCA_mod_CV(X, Y, var_exp, window_years, X_test=None):
     Y_to_verif = Y.sel(time=fechas_testing)
 
     return mod_adj_ct, Y_to_verif-Y.mean('time')
+
+def CCA_mod_CV_2(X, Y, var_exp,
+                 X_mes=None, Y_mes=None,
+                 X_trim=False, Y_trim=False,
+                 X_anios=None, Y_anios=None,
+                 window_years=3, X_test=None):
+
+    """
+    CCA_mod con CV
+
+    Parametros:
+    X xr.DataArray o Xr.DataSet
+    Y xr.DataArray o xr.DataSet
+    var_exp float, default 0.7 varianza que se quiere retener.
+    window_years (int): ventana de años a usar en la validacion cruzada
+    X_test = xr.DataArray o Yr.DataSet, default None
+    return:
+    mod_adj_ct Xr.DataSet
+    Y_to_verif-Y.mean('time') Xr.DataSet
+    """
+
+    var_name = list(Y.data_vars)[0]
+    total_tiempos = len(X.time)
+    compute = True
+    if X_anios is None and Y_anios is None:
+        print('X_anios, Y_anios is None')
+        print('Se usará el periodo de anios en común mas largo entre X e Y')
+
+        if len(X.time.values) < len(Y.time.values):
+            X_anios_values = np.unique(X.time.dt.year.values)
+            Y_anios_values = X_anios_values
+
+        elif len(Y.time.values) < len(X.time.values):
+            X_anios_values = np.unique(Y.time.dt.year.values)
+            Y_anios_values = X_anios_values
+
+    elif X_anios is not None and Y_anios is not None:
+        X_anios_values = np.arange(X_anios[0], X_anios[-1] + 1)
+        Y_anios_values = np.arange(Y_anios[0], Y_anios[-1] + 1)
+
+        if len(X_anios_values) != len(Y_anios_values):
+            print('El rango de X_anios, Y_anios debe contener la misma'
+                  'cantidad de años')
+            compute = False
+    else:
+        print('X_anios, Y_anios deben ser None o list, ambos.')
+        compute = False
+
+    if compute is True:
+        # Set data
+        if X_trim is True:
+            X = X.rolling(time=3, center=True).mean('time')
+            # Si se hace promedio movil perdemos los extremos y CCA no admite NaNs
+            X = X.sel(time=X.time.isin(X.time.values[1:-1]))
+
+        if Y_trim is True:
+            Y = Y.rolling(time=3, center=True).mean('time')
+            Y = Y.sel(time=Y.time.isin(Y.time.values[1:-1]))
+
+        X = X.sel(time=X.time.dt.year.isin(X_anios_values))
+        X = X.sel(time=X.time.dt.month.isin(X_mes))
+
+        Y = Y.sel(time=Y.time.dt.year.isin(Y_anios_values))
+        Y = Y.sel(time=Y.time.dt.month.isin(Y_mes))
+
+        if X_test is not None:
+            if X_trim is True:
+                X_test = X_test.rolling(time=3, center=True).mean('time')
+                X_test = X_test.sel(time=X_test.time.isin(X.time.values[1:-1]))
+
+            X_test = X_test.sel(time=X.time.dt.year.isin(X_anios_values))
+            X_test = X_test.sel(time=X_test.time.dt.month.isin(X_mes))
+
+    total_tiempos = len(X.time)
+    mod_adj = []
+    fechas_testing = []
+    for i in range(total_tiempos - window_years + 1):
+
+        tiempos_a_omitir = range(i, i + window_years)
+
+        # iteracion 0
+        if X_test is not None:
+            X_testing = X_test.sel(time=X_test.time.values[tiempos_a_omitir])
+        else:
+            X_testing = X.sel(time=X.time.values[tiempos_a_omitir])
+
+        Y_testing = Y.sel(time=Y.time.values[tiempos_a_omitir])
+
+        X_training = X.drop_sel(time=X_testing.time.values)
+        Y_training = Y.drop_sel(time=Y_testing.time.values)
+
+        pos_med = int((len(X_testing.time) - 1) / 2)
+
+        #fechas.append(X_testing.time.values[pos_med])
+        fechas_testing.append(Y_testing.time.values[pos_med])
+
+        adj = CCA_mod(X=X_training, X_test=X_testing,
+                      Y=Y_training, var_exp=var_exp)[0]
+        adj = adj[pos_med,:,:]
+
+        adj_aux = adj.reshape(len(Y.lat.values), len(Y.lon.values),
+                              adj.shape[-1])
+
+        adj_xr = xr.DataArray(adj_aux,
+                              dims=['lat', 'lon', 'modo'],
+                              coords={'lat': Y.lat.values,
+                                      'lon': Y.lon.values,
+                                      'modo': np.arange(0, adj_aux.shape[-1])})
+
+        # sumamos todos los modos y escalamos para reconstruir los datos
+        adj_xr = (adj_xr.sum('modo') * Y_training.std('time')[var_name]
+                  / (var_exp))
+
+        mod_adj.append(adj_xr)
+
+    mod_adj_ct = xr.concat(mod_adj, dim='time')
+    mod_adj_ct['time'] = fechas_testing
+    mod_adj_ct = mod_adj_ct.to_dataset(name=var_name)
+
+    Y_to_verif = Y.sel(time=fechas_testing)
+
+    return mod_adj_ct, Y_to_verif-Y_to_verif.mean('time')
 
 def CCA_calibracion_CV(X_modelo_full, Y, var_exp, window_years):
     """
