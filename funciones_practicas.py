@@ -1577,7 +1577,7 @@ def CCA_training_testing_2(X, Y, var_exp,
             iter = [[anios_training, anios_testing],
                     [anios_testing, anios_training]]
         else:
-            iter = [[anios_training,anios_testing]]
+            iter = [[anios_training, anios_testing]]
 
         for it_n, it in enumerate(iter):
             atr = it[0]
@@ -1589,12 +1589,14 @@ def CCA_training_testing_2(X, Y, var_exp,
             Y_anios_training = atr + plus_anio
             Y_anios_testing = att + plus_anio
 
+
             X_training = X.sel(time=X.time.dt.year.isin(X_anios_training))
             X_testing = X.sel(time=X.time.dt.year.isin(X_anios_testing))
 
             Y_training = Y.sel(time=Y.time.dt.year.isin(Y_anios_training))
             Y_testing = Y.sel(time=Y.time.dt.year.isin(Y_anios_testing))
 
+            print('CCA')
             adj, b_verif = CCA_mod(X=X_training, X_test=X_testing,
                                    Y=Y_training, var_exp=var_exp)
 
@@ -1611,18 +1613,21 @@ def CCA_training_testing_2(X, Y, var_exp,
                                           'modo': np.arange(0,
                                                             adj_rs.shape[-1])})
 
-            adj_xr = (adj_xr.sum('modo') * Y_training.var('time')[
-                list(Y.data_vars)[0]]
-                      / (var_exp))
+            adj_xr = (adj_xr.sum('modo') * Y_training.std('time')[
+                list(Y.data_vars)[0]] / (var_exp))
+
             mod_adj = adj_xr.to_dataset(name=list(Y.data_vars)[0])
             mod_adj['time'] = Y_testing.time.values
 
+            data_to_verif = Y_testing - Y_training.mean('time')
             if it_n == 0:
                 adj_f = mod_adj
+                data_to_verif_f = data_to_verif
             else:
-                adj_f = xr.concat([adj_f, mod_adj], dim='time')
-
-            data_to_verif = None
+                print('test it_n == 1')
+                adj_f = xr.concat([mod_adj, adj_f], dim='time')
+                data_to_verif_f = xr.concat([data_to_verif, data_to_verif_f],
+                                            dim='time')
             #for atr, att in zip(it):
 
 
@@ -1694,9 +1699,9 @@ def CCA_training_testing_2(X, Y, var_exp,
         # data_to_verif = Y_testing - Y_training.mean('time')
 
     else:
-        mod_adj, data_to_verif = None
+        adj_f, data_to_verif_f = None
 
-    return mod_adj, data_to_verif
+    return adj_f, data_to_verif_f
 
 def CCA_calibracion_training_testing(X_modelo_full, Y_observaciones, var_exp,
                                      anios_training=[1984, 2011],
