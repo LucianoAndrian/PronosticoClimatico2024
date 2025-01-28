@@ -550,6 +550,8 @@ def Compute_MLR(predictando=None, mes_predictando=None,
     """
     output0 = None
     output1 = None
+    output2 = None
+    output3 = None
 
     if (isinstance(predictando, xr.Dataset)
             and isinstance(predictores, list)
@@ -609,10 +611,20 @@ def Compute_MLR(predictando=None, mes_predictando=None,
                    promedio_mes_predictando[variable_predictando])
         output1 = regre
 
+        reconstruc = MLR_pronostico(data=predictando,
+                                    regre_result=regre,
+                                    predictores=predictores_set)[1]
+
+        reconstruc_anom = (reconstruc*predictando_sd)
+
+        reconstruc = reconstruc_anom + promedio_mes_predictando
+
+        output2 = reconstruc
+        output3 = reconstruc_anom
     else:
         print('Error en formato de variables de entradas')
 
-    return output0, output1
+    return output0, output1, output2
 
 
 def Compute_MLR_training_testing(predictando=None, mes_predictando=None,
@@ -736,8 +748,10 @@ def Compute_MLR_training_testing(predictando=None, mes_predictando=None,
         #                                          training_regre_full,
         #                                          predictores_testing)[1]
 
-        testing_reconstruc_full = ((testing_reconstruc*sd_mes_predictando_testing)
-                                   +  promedio_mes_predictando_testing)
+        testing_reconstruc_anom = ((testing_reconstruc*sd_mes_predictando_testing))
+
+        testing_reconstruc_full = (testing_reconstruc_anom +
+                                   promedio_mes_predictando_testing)
 
         if reconstruct_full:
             # predictando_testing = CrossAnomaly_1y(predictando_testing,
@@ -762,9 +776,14 @@ def Compute_MLR_training_testing(predictando=None, mes_predictando=None,
             #                                           testing_regre_full,
             #                                           predictores_training)[1]
 
-            training_reconstruc_full = ((training_reconstruc*sd_mes_predictando_training) +
+            training_reconstruc_anom = training_reconstruc * \
+                                       sd_mes_predictando_training
+
+            training_reconstruc_full = (training_reconstruc_anom +
                                         promedio_mes_predictando_training)
-            forecast = xr.concat([training_reconstruc, testing_reconstruc],
+
+            forecast = xr.concat([training_reconstruc_anom,
+                                  testing_reconstruc_anom],
                                  dim = 'time')
 
             forecast_full = xr.concat([training_reconstruc_full,
@@ -785,7 +804,7 @@ def Compute_MLR_training_testing(predictando=None, mes_predictando=None,
     else:
         print('Error en formato de variables de entradas')
 
-    return output0, output1, output2
+    return output0, output1, output2#, output3
 
 # ---------------------------------------------------------------------------- #
 def Compute_MLR_CV(xrds, predictores, window_years, intercept=True):
@@ -1045,6 +1064,8 @@ def Compute_MLR_CV_2(predictando, mes_predictando=None,
 
     # return (regre_result_cv, regre_result_full_cv, years_out_reconstruct_cv,
     #         years_out_reconstruct_full_cv)
+    regre_result_cv = regre_result_cv.mean('k')
+    regre_result_full_cv = regre_result_full_cv.mean('k')
     return regre_result_cv, regre_result_full_cv, years_out_reconstruct_full_cv
 
 def MLR_pronostico(data, regre_result, predictores):
@@ -1329,9 +1350,9 @@ def CCA(X, Y, var_exp=0.7, dataarray_pq_outputs=False):
 
     return P, Q, heP, heQ, S, A, B
 
-def CCA_2(X, Y, var_exp=0.7, X_mes=None, Y_mes=None,
-          X_trim=False, Y_trim=False,
-          X_anios=None, Y_anios=None):
+def Compute_CCA(X, Y, var_exp=0.7, X_mes=None, Y_mes=None,
+                X_trim=False, Y_trim=False,
+                X_anios=None, Y_anios=None):
 
     compute = True
     if X_anios is None and Y_anios is None:
@@ -1352,11 +1373,11 @@ def CCA_2(X, Y, var_exp=0.7, X_mes=None, Y_mes=None,
             print('El rango de X_anios, Y_anios debe contener la misma'
                   'cantidad de años')
             compute = False
-            P, Q, heP, heQ, S, A, B = None
+            P_da, Q_da, A, B, S = None
     else:
         print('X_anios, Y_anios deben ser None o list, ambos.')
         compute = False
-        P, Q, heP, heQ, S, A, B = None
+        P_da, Q_da, A, B, S = None
 
 
     if compute is True:
@@ -1378,8 +1399,14 @@ def CCA_2(X, Y, var_exp=0.7, X_mes=None, Y_mes=None,
 
         P, Q, heP, heQ, S, A, B = CCA(X=X, Y=Y, var_exp=var_exp,
                                       dataarray_pq_outputs=True)
+        modos = np.arange(1, len(P.cca)+1)
+        P = P.assign_coords({'cca': modos})
+        P = P.rename({'cca':'modo'})
 
-    return P, Q, heP, heQ, S, A, B
+        Q = Q.assign_coords({'cca': modos})
+        Q = Q.rename({'cca':'modo'})
+
+    return P, Q, A, B, S
 
 def CCA_mod(X, X_test, Y, var_exp=0.7):
     """
@@ -1442,7 +1469,7 @@ def CCA_mod(X, X_test, Y, var_exp=0.7):
 
     return adj, B_verif
 
-def CCA_training_testing(X, Y, var_exp,
+def CCA_training_testing_OLD(X, Y, var_exp,
                          anios_training=[1984, 2011],
                          anios_testing=[2011, 2020],
                          plus_anio=0):
@@ -1500,14 +1527,13 @@ def CCA_training_testing(X, Y, var_exp,
 
     return mod_adj, Y_testing-Y_training.mean('time')
 
-def CCA_training_testing_2(X, Y, var_exp,
-                           X_mes=None, Y_mes=None,
-                           X_trim=False, Y_trim=False,
-                           X_anios=None, Y_anios=None,
-                           anios_training=[1983, 2010],
-                           anios_testing=[2011, 2020],
-                           plus_anio=0,
-                           reconstruct_full = False):
+def CCA_training_testing(X, Y, var_exp,
+                         X_mes=None, Y_mes=None,
+                         X_trim=False, Y_trim=False,
+                         X_anios=None, Y_anios=None,
+                         anios_training=[1983, 2010],
+                         anios_testing=[2011, 2020],
+                         reconstruct_full = False):
     """
     CCA en periodos de training y testing
     Parametros:
@@ -1549,6 +1575,7 @@ def CCA_training_testing_2(X, Y, var_exp,
         compute = False
 
     if compute is True:
+        plus_anio = np.abs(X_anios_values[-1]-Y_anios_values[-1])
         # Set data
         if X_trim is True:
             X = X.rolling(time=3, center=True).mean('time')
@@ -1596,7 +1623,6 @@ def CCA_training_testing_2(X, Y, var_exp,
             Y_training = Y.sel(time=Y.time.dt.year.isin(Y_anios_training))
             Y_testing = Y.sel(time=Y.time.dt.year.isin(Y_anios_testing))
 
-            print('CCA')
             adj, b_verif = CCA_mod(X=X_training, X_test=X_testing,
                                    Y=Y_training, var_exp=var_exp)
 
@@ -1624,7 +1650,6 @@ def CCA_training_testing_2(X, Y, var_exp,
                 adj_f = mod_adj
                 data_to_verif_f = data_to_verif
             else:
-                print('test it_n == 1')
                 adj_f = xr.concat([mod_adj, adj_f], dim='time')
                 data_to_verif_f = xr.concat([data_to_verif, data_to_verif_f],
                                             dim='time')
@@ -1773,7 +1798,7 @@ def CCA_calibracion_training_testing(X_modelo_full, Y_observaciones, var_exp,
 
     return mod_adj, Y_testing-Y_training.mean('time')
 
-def CCA_mod_CV(X, Y, var_exp, window_years, X_test=None):
+def CCA_mod_CV_OLD(X, Y, var_exp, window_years, X_test=None):
 
     """
     CCA_mod con CV
@@ -1842,7 +1867,7 @@ def CCA_mod_CV(X, Y, var_exp, window_years, X_test=None):
 
     return mod_adj_ct, Y_to_verif-Y.mean('time')
 
-def CCA_mod_CV_2(X, Y, var_exp,
+def CCA_mod_CV(X, Y, var_exp,
                  X_mes=None, Y_mes=None,
                  X_trim=False, Y_trim=False,
                  X_anios=None, Y_anios=None,
