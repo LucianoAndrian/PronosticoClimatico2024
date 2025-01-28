@@ -1370,7 +1370,7 @@ def Compute_CCA(X, Y, var_exp=0.7, X_mes=None, Y_mes=None,
         X_anios_values = np.arange(X_anios[0], X_anios[-1] + 1)
         Y_anios_values = np.arange(Y_anios[0], Y_anios[-1] + 1)
         if len(X_anios_values) != len(Y_anios_values):
-            print('El rango de X_anios, Y_anios debe contener la misma'
+            print('El rango de X_anios, Y_anios debe contener la misma '
                   'cantidad de años')
             compute = False
             P_da, Q_da, A, B, S = None
@@ -1399,6 +1399,7 @@ def Compute_CCA(X, Y, var_exp=0.7, X_mes=None, Y_mes=None,
 
         P, Q, heP, heQ, S, A, B = CCA(X=X, Y=Y, var_exp=var_exp,
                                       dataarray_pq_outputs=True)
+
         modos = np.arange(1, len(P.cca)+1)
         P = P.assign_coords({'cca': modos})
         P = P.rename({'cca':'modo'})
@@ -1567,7 +1568,7 @@ def CCA_training_testing(X, Y, var_exp,
         Y_anios_values = np.arange(Y_anios[0], Y_anios[-1] + 1)
 
         if len(X_anios_values) != len(Y_anios_values):
-            print('El rango de X_anios, Y_anios debe contener la misma'
+            print('El rango de X_anios, Y_anios debe contener la misma '
                   'cantidad de años')
             compute = False
     else:
@@ -1728,7 +1729,7 @@ def CCA_training_testing(X, Y, var_exp,
 
     return adj_f, data_to_verif_f
 
-def CCA_calibracion_training_testing(X_modelo_full, Y_observaciones, var_exp,
+def CCA_calibracion_training_testing_OLD(X_modelo_full, Y_observaciones, var_exp,
                                      anios_training=[1984, 2011],
                                      anios_testing=[2011, 2020],
                                      plus_anio=0):
@@ -1770,6 +1771,7 @@ def CCA_calibracion_training_testing(X_modelo_full, Y_observaciones, var_exp,
 
     mod_adj = []
     for r in X_modelo_full.r.values:
+        return X_training, Y_training, X_testing
         adj, b_verif = CCA_mod(X=X_training,
                                X_test=X_testing.sel(r=r),
                                Y=Y_training, var_exp=var_exp)
@@ -1786,7 +1788,7 @@ def CCA_calibracion_training_testing(X_modelo_full, Y_observaciones, var_exp,
                                       'modo': np.arange(0, adj_rs.shape[-1])})
 
         # sumamos todos los modos y escalamos para reconstruir los datos
-        adj_xr = (adj_xr.sum('modo') * Y_training.var('time')[var_name] /
+        adj_xr = (adj_xr.sum('modo') * Y_training.std('time')[var_name] /
                   (var_exp))
 
         mod_adj.append(adj_xr)
@@ -1797,6 +1799,136 @@ def CCA_calibracion_training_testing(X_modelo_full, Y_observaciones, var_exp,
     mod_adj = mod_adj.to_dataset(name=var_name)
 
     return mod_adj, Y_testing-Y_training.mean('time')
+
+def CCA_calibracion_training_testing(X_modelo, Y_observacion, var_exp,
+                                     Y_mes=None, Y_trim=False,
+                                     X_anios=None, Y_anios=None,
+                                     anios_training=[1983, 2010],
+                                     anios_testing=[2011, 2020],
+                                     reconstruct_full = False):
+    X = X_modelo
+    Y = Y_observacion
+    compute = True
+    if X_anios is None and Y_anios is None:
+        print('X_anios, Y_anios is None')
+        print('Se usará el periodo de anios en común mas largo entre X e Y')
+
+        if len(X_modelo.time.values) < len(Y.time.values):
+            X_anios_values = np.unique(X.time.dt.year.values)
+            Y_anios_values = X_anios_values
+
+        elif len(Y.time.values) < len(X_modelo.time.values):
+            X_anios_values = np.unique(Y.time.dt.year.values)
+            Y_anios_values = X_anios_values
+
+    elif X_anios is not None and Y_anios is not None:
+        X_anios_values = np.arange(X_anios[0], X_anios[-1] + 1)
+        Y_anios_values = np.arange(Y_anios[0], Y_anios[-1] + 1)
+
+        if len(X_anios_values) != len(Y_anios_values):
+            print('El rango de X_anios, Y_anios debe contener la misma '
+                  'cantidad de años')
+            compute = False
+    else:
+        print('X_anios, Y_anios deben ser None o list, ambos.')
+        compute = False
+
+    if compute is True:
+        plus_anio = np.abs(X_anios_values[-1]-Y_anios_values[-1])
+        # Set data
+        # if X_trim is True:
+        #     X = X_modelo.rolling(time=3, center=True).mean('time')
+        #     # Si se hace promedio movil perdemos los extremos y CCA no admite NaNs
+        #     X = X.sel(time=X.time.isin(X.time.values[1:-1]))
+
+        if Y_trim is True:
+            Y = Y.rolling(time=3, center=True).mean('time')
+            Y = Y.sel(time=Y.time.isin(Y.time.values[1:-1]))
+
+
+        X = X.sel(time=X.time.dt.year.isin(X_anios_values))
+        #X = X.sel(time=X.time.dt.month.isin(X_mes))
+
+        Y = Y.sel(time=Y.time.dt.year.isin(Y_anios_values))
+        Y = Y.sel(time=Y.time.dt.month.isin(Y_mes))
+
+        # Training - Testing
+        anios_training = np.arange(anios_training[0], anios_training[-1] + 1)
+        anios_testing = np.arange(anios_testing[0], anios_testing[-1] + 1)
+
+        if plus_anio > 0:
+            if anios_testing[-1] > Y_anios[-1]:
+                anios_testing = anios_testing[0:-1]
+
+        if reconstruct_full is True:
+            iter = [[anios_training, anios_testing],
+                    [anios_testing, anios_training]]
+        else:
+            iter = [[anios_training, anios_testing]]
+
+        for it_n, it in enumerate(iter):
+            atr = it[0]
+            att = it[1]
+
+            X_anios_training = atr
+            X_anios_testing = att
+
+            Y_anios_training = atr + plus_anio
+            Y_anios_testing = att + plus_anio
+
+
+            X_training = X.sel(time=X.time.dt.year.isin(X_anios_training))
+            X_testing = X.sel(time=X.time.dt.year.isin(X_anios_testing))
+
+            Y_training = Y.sel(time=Y.time.dt.year.isin(Y_anios_training))
+            Y_testing = Y.sel(time=Y.time.dt.year.isin(Y_anios_testing))
+
+
+            mod_adj = []
+            for r in X.r.values:
+                print('test')
+                print(r)
+                adj, b_verif = CCA_mod(X=X_training.mean('r'),
+                                       X_test=X_testing.sel(r=r),
+                                       Y=Y_training, var_exp=var_exp)
+                print("cca done")
+                adj_rs = adj.reshape(adj.shape[0],
+                                     len(Y.lat.values),
+                                     len(Y.lon.values),
+                                     adj.shape[2])
+
+                adj_xr = xr.DataArray(adj_rs,
+                                      dims=['time', 'lat', 'lon', 'modo'],
+                                      coords={'lat': Y.lat.values,
+                                              'lon': Y.lon.values,
+                                              'time': X_testing.time.values,
+                                              'modo': np.arange(
+                                                  0, adj_rs.shape[-1])})
+
+                # sumamos todos los modos y escalamos para reconstruir los datos
+                adj_xr = (adj_xr.sum('modo') * Y_training.std('time')[
+                    list(X.data_vars)[0]] / (var_exp))
+
+                mod_adj.append(adj_xr)
+
+            data_to_verif = Y_testing - Y_training.mean('time')
+
+            mod_adj = xr.concat(mod_adj, dim='r')
+            mod_adj['r'] = X_testing['r']
+            mod_adj = mod_adj.to_dataset(name=list(X.data_vars)[0])
+
+            if it_n == 0:
+                adj_f = mod_adj
+                data_to_verif_f = data_to_verif
+            else:
+                adj_f = xr.concat([mod_adj, adj_f], dim='time')
+                data_to_verif_f = xr.concat(
+                    [data_to_verif, data_to_verif_f], dim='time')
+
+    else:
+        adj_f, data_to_verif_f = None
+
+    return adj_f, data_to_verif_f
 
 def CCA_mod_CV_OLD(X, Y, var_exp, window_years, X_test=None):
 
@@ -1907,7 +2039,7 @@ def CCA_mod_CV(X, Y, var_exp,
         Y_anios_values = np.arange(Y_anios[0], Y_anios[-1] + 1)
 
         if len(X_anios_values) != len(Y_anios_values):
-            print('El rango de X_anios, Y_anios debe contener la misma'
+            print('El rango de X_anios, Y_anios debe contener la misma '
                   'cantidad de años')
             compute = False
     else:
@@ -1926,7 +2058,8 @@ def CCA_mod_CV(X, Y, var_exp,
             Y = Y.sel(time=Y.time.isin(Y.time.values[1:-1]))
 
         X = X.sel(time=X.time.dt.year.isin(X_anios_values))
-        X = X.sel(time=X.time.dt.month.isin(X_mes))
+        if X_mes is not None:
+            X = X.sel(time=X.time.dt.month.isin(X_mes))
 
         Y = Y.sel(time=Y.time.dt.year.isin(Y_anios_values))
         Y = Y.sel(time=Y.time.dt.month.isin(Y_mes))
@@ -1942,6 +2075,7 @@ def CCA_mod_CV(X, Y, var_exp,
     total_tiempos = len(X.time)
     mod_adj = []
     fechas_testing = []
+    fechas = []
     for i in range(total_tiempos - window_years + 1):
 
         tiempos_a_omitir = range(i, i + window_years)
@@ -1959,7 +2093,7 @@ def CCA_mod_CV(X, Y, var_exp,
 
         pos_med = int((len(X_testing.time) - 1) / 2)
 
-        #fechas.append(X_testing.time.values[pos_med])
+        fechas.append(X_testing.time.values[pos_med])
         fechas_testing.append(Y_testing.time.values[pos_med])
 
         adj = CCA_mod(X=X_training, X_test=X_testing,
@@ -1982,14 +2116,14 @@ def CCA_mod_CV(X, Y, var_exp,
         mod_adj.append(adj_xr)
 
     mod_adj_ct = xr.concat(mod_adj, dim='time')
-    mod_adj_ct['time'] = fechas_testing
+    mod_adj_ct['time'] = fechas
     mod_adj_ct = mod_adj_ct.to_dataset(name=var_name)
 
     Y_to_verif = Y.sel(time=fechas_testing)
 
     return mod_adj_ct, Y_to_verif-Y_to_verif.mean('time')
 
-def CCA_calibracion_CV(X_modelo_full, Y, var_exp, window_years):
+def CCA_calibracion_CV_OLD(X_modelo_full, Y, var_exp, window_years):
     """
     Calibracion con CCA_mod_CV, Y=miembros de ensamble en CCA_mod
 
@@ -2015,6 +2149,29 @@ def CCA_calibracion_CV(X_modelo_full, Y, var_exp, window_years):
     mod_adj_xr = xr.concat(mod_adj, dim='r')
     mod_adj_xr['r'] = X_modelo_full.r.values
     #mod_adj_xr = mod_adj_xr.to_dataset(name=list(X_modelo_full.data_vars)[0])
+
+    return mod_adj_xr, Y_to_verif
+
+def CCA_calibracion_CV(X_modelo, Y_observacion, var_exp,
+                       Y_mes=None, Y_trim=False,
+                       X_anios=None, Y_anios=None,
+                       window_years=3):
+
+    X_mes = int(X_modelo.time.dt.month.mean().values)
+    mod_adj = []
+    for r in X_modelo.r.values:
+        adj, Y_to_verif = CCA_mod_CV(X=X_modelo.mean('r'),
+                                     Y=Y_observacion,
+                                     X_test=X_modelo.sel(r=r),
+                                     var_exp=var_exp,
+                                     X_mes=X_mes, Y_mes=Y_mes,
+                                     X_trim=False, Y_trim=Y_trim,
+                                     X_anios=X_anios, Y_anios=Y_anios,
+                                     window_years=window_years)
+        mod_adj.append(adj)
+
+    mod_adj_xr = xr.concat(mod_adj, dim='r')
+    mod_adj_xr['r'] = X_modelo.r.values
 
     return mod_adj_xr, Y_to_verif
 # ---------------------------------------------------------------------------- #
@@ -2050,7 +2207,7 @@ def Media_Desvio_CV_Observaciones(data):
 
     return mean, sd
 
-def Calibracion_MediaSD(mod, obs):
+def Calibracion_MediaSD_OLD(mod, obs):
     """
     Calibra removiendo la media y desvio standard del modelo y luego
     multiplicando y sumando el desvio y la media observada, respectivamente
@@ -2099,6 +2256,97 @@ def Calibracion_MediaSD(mod, obs):
         calibrated_t = None
 
     return calibrated_t
+
+def Calibracion_MediaSD(X_modelo, Y_observacion, Y_mes, Y_trim=False,
+                        X_anios=[], Y_anios=[]):
+    """
+    Calibra removiendo la media y desvio standard del modelo y luego
+    multiplicando y sumando el desvio y la media observada, respectivamente
+
+    Parametros:
+    mod xr.dataarray o xr.dataset
+    obs xr.dataarray o xr.dataset
+
+    Return:
+    calibrated_t xr.dataset o xr.dataset de la mismas dimenciones que mod
+    """
+    X = X_modelo
+    Y = Y_observacion
+
+    import warnings
+    warnings.simplefilter("ignore", category=RuntimeWarning)
+
+    compute = True
+    if X_anios is None and Y_anios is None:
+        print('X_anios, Y_anios is None')
+        print('Se usará el periodo de anios en común mas largo entre X e Y')
+
+        if len(X.time.values) < len(Y.time.values):
+            X_anios_values = np.unique(X.time.dt.year.values)
+            Y_anios_values = X_anios_values
+
+        elif len(Y.time.values) < len(X.time.values):
+            X_anios_values = np.unique(Y.time.dt.year.values)
+            Y_anios_values = X_anios_values
+
+    elif X_anios is not None and Y_anios is not None:
+        X_anios_values = np.arange(X_anios[0], X_anios[-1] + 1)
+        Y_anios_values = np.arange(Y_anios[0], Y_anios[-1] + 1)
+
+        if len(X_anios_values) != len(Y_anios_values):
+            print('El rango de X_anios, Y_anios debe contener la misma '
+                  'cantidad de años')
+            compute = False
+    else:
+        print('X_anios, Y_anios deben ser None o list, ambos.')
+        compute = False
+
+    if Y_trim:
+        obs = Y.rolling(time=3, center=True).mean('time')
+
+    obs = obs.sel(time=obs.time.dt.month.isin(Y_mes))
+    obs = obs.sel(time=obs.time.dt.year.isin(Y_anios_values))
+
+    # Como en _OLD
+    mod = X
+
+    calibrated_t = None
+    obs_to_verif = None
+    if compute:
+        obs_mean, obs_sd = Media_Desvio_CV_Observaciones(obs)
+
+        if 'r' in mod.dims:
+            for r_e in mod.r.values:
+                for t in mod.time.values:
+
+                    mod_r_t = mod.sel(time=t, r=r_e)
+
+                    aux = mod.where(mod.r != r_e, drop=True)
+                    mod_no_r_t = aux.where(aux.time != t, drop=True)
+
+                    mean_no_r_t = mod_no_r_t.mean(['time', 'r'])
+                    sd_no_r_t = mod_no_r_t.std(['time', 'r'])
+
+                    mod_r_t_calibrated = (((mod_r_t - mean_no_r_t) / sd_no_r_t)
+                                          * obs_sd + obs_mean)
+
+                    if t == mod.time.values[0]:
+                        calibrated_r_t = mod_r_t_calibrated
+                    else:
+                        calibrated_r_t = xr.concat([calibrated_r_t,
+                                                    mod_r_t_calibrated],
+                                                   dim='time')
+
+                if int(r_e) == int(mod.r.values[0]):
+                    calibrated_t = calibrated_r_t
+                else:
+                    calibrated_t = xr.concat([calibrated_t, calibrated_r_t],
+                                             dim='r')
+            obs_to_verif = obs
+        else:
+            calibrated_t = None
+
+    return calibrated_t, obs_to_verif
 
 def Quantile_CV(data, quantiles=[0.33, 0.66]):
 
@@ -2327,8 +2575,9 @@ def MakeMask(DataArray, dataname='mask'):
     return mask
 
 def Plot_CategoriaMasProbable(data_categorias, variable,
-                               titulo='Categoria más probable',
-                              mask_land=False):
+                              titulo='Categoria más probable',
+                              mask_land=False,
+                              mask_andes = False):
     """
     Plotea la salida de Prono_Qt graficando la en cada punto de reticula
     la categoria mas probable
@@ -2359,13 +2608,13 @@ def Plot_CategoriaMasProbable(data_categorias, variable,
         colores_below = ListedColormap(
             plt.cm.YlOrBr(np.linspace(0.2, 0.6, 256)))
         colores_normal = ListedColormap(
-            plt.cm.Greys(np.linspace(0.3, 0.9, 256)))
+            plt.cm.Greys(np.linspace(0.3, 0.8, 256)))
         colores_above = ListedColormap(plt.cm.Blues(np.linspace(0.3, 0.9, 256)))
     elif variable == 'temp' or variable == 'tref' or variable == 'temperatura':
         colores_below = ListedColormap(
             plt.cm.Blues(np.linspace(0.3, 0.9, 256)))
         colores_normal = ListedColormap(
-            plt.cm.Greys(np.linspace(0.3, 0.9, 256)))
+            plt.cm.Greys(np.linspace(0.3, 0.8, 256)))
         colores_above = ListedColormap(plt.cm.Reds(np.linspace(0.2, 0.6, 256)))
 
     data_categorias = xr.where(np.isnan(data_categorias), -999, data_categorias)
@@ -2394,6 +2643,20 @@ def Plot_CategoriaMasProbable(data_categorias, variable,
         cbar = plt.colorbar(im, cax=cbar_ax, extend='both')
         cbar.set_label(label)
         cbar.ax.set_yticks([0.4, 0.6, 0.8, 1])
+
+    if mask_andes is True:
+        from SetCodes.descarga_topografia import compute
+        topografia = compute()
+
+        from matplotlib import colors
+        andes_cmap = colors.ListedColormap(
+            ['k'])  # una palenta de colores todo negro
+
+        # contorno que va enmascarar el relieve superior a mask_level
+        mask_level = 1300  # metros
+        ax.contourf(topografia.lon, topografia.lat, topografia.topo,
+                    levels=[mask_level, 666666],
+                    cmap=andes_cmap, transform=crs_latlon)
 
     ax.coastlines(color='k', linestyle='-', alpha=1)
     ax.add_feature(cfeature.BORDERS, linewidth=0.5)
