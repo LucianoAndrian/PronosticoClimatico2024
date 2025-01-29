@@ -603,10 +603,10 @@ def Compute_MLR(predictando=None, mes_predictando=None,
             CrossAnomaly_1y(predictando, norm=True, return_mean_sd=True))
 
         mlr = MLR(predictores_set)
-        print(predictores_set)
-        print(predictando[variable_predictando])
+        # print(predictores_set)
+        # print(predictando[variable_predictando])
         regre = mlr.compute_MLR(predictando[variable_predictando])
-        print(predictando_sd)
+        # print(predictando_sd)
         output0 = ((regre*predictando_sd) +
                    promedio_mes_predictando[variable_predictando])
         output1 = regre
@@ -1186,8 +1186,11 @@ def normalize_and_fill(data):
     data_filled = data.fillna(mean_val)
 
     # Normaliza
-    data_normalized = ((data_filled - data_filled.mean(dim='time')) /
-                       data_filled.std(dim='time'))
+    mean = data_filled.mean(dim='time')
+    std = data_filled.std(dim='time')
+
+    data_normalized = (data_filled - mean) / std
+
 
     # Aveces aparecen NaN otra vez despues del paso anterior
     data_normalized = data_normalized.fillna(0)
@@ -1195,7 +1198,7 @@ def normalize_and_fill(data):
     # Transformamos la data a (tiempo, spatial) donde spatial = lat*lon
     data_normalized = data_normalized.stack(spatial=(lat_name, lon_name))
 
-    return data_normalized
+    return data_normalized, mean, std
 
 def AutoVec_Val_EOF(m, var_exp):
     """
@@ -1288,8 +1291,8 @@ def CCA(X, Y, var_exp=0.7, dataarray_pq_outputs=False):
     Y_lon = Y.lon.values
 
     # Normalizado
-    X = normalize_and_fill(X)
-    Y = normalize_and_fill(Y)
+    X, X_mean, X_std = normalize_and_fill(X)
+    Y, Y_mean, Y_std = normalize_and_fill(Y)
 
     tx = X.shape[0]
     ty = Y.shape[0]
@@ -1426,10 +1429,10 @@ def CCA_mod(X, X_test, Y, var_exp=0.7):
     P, Q, heP, heQ, S, A, B = CCA(X, Y, var_exp)
 
     # Normalizando
-    X_training = normalize_and_fill(X)
-    X_verif = normalize_and_fill(X_test)
+    X_training = normalize_and_fill(X)[0]
+    X_verif = normalize_and_fill(X_test)[0]
 
-    Y_training = normalize_and_fill(Y)
+    Y_training = normalize_and_fill(Y)[0]
 
     # EOF
     Vx, ux = AutoVec_Val_EOF(X_training, P.shape[1])
@@ -1640,13 +1643,17 @@ def CCA_training_testing(X, Y, var_exp,
                                           'modo': np.arange(0,
                                                             adj_rs.shape[-1])})
 
-            adj_xr = (adj_xr.sum('modo') * Y_training.std('time')[
-                list(Y.data_vars)[0]] / (var_exp))
+            Y_training_mean, Y_training_std = normalize_and_fill(
+                Y_training)[1:3]
+
+            adj_xr = ((adj_xr.sum(
+                'modo') * Y_training_std) + Y_training_mean) / (var_exp)
 
             mod_adj = adj_xr.to_dataset(name=list(Y.data_vars)[0])
             mod_adj['time'] = Y_testing.time.values
 
-            data_to_verif = Y_testing - Y_training.mean('time')
+            data_to_verif = Y_testing# - Y_training.mean('time')
+
             if it_n == 0:
                 adj_f = mod_adj
                 data_to_verif_f = data_to_verif
@@ -1654,76 +1661,6 @@ def CCA_training_testing(X, Y, var_exp,
                 adj_f = xr.concat([mod_adj, adj_f], dim='time')
                 data_to_verif_f = xr.concat([data_to_verif, data_to_verif_f],
                                             dim='time')
-            #for atr, att in zip(it):
-
-
-
-
-        #
-        # X_anios_training =  np.arange(anios_training[0], anios_training[-1] + 1)
-        # X_anios_testing = np.arange(anios_testing[0], anios_testing[-1] + 1)
-        #
-        # Y_anios_training =  np.arange(anios_training[0] + plus_anio,
-        #                               anios_training[-1] +  1 + plus_anio)
-        # Y_anios_testing = np.arange(anios_testing[0] + plus_anio,
-        #                             anios_testing[-1] + 1 + plus_anio)
-        #
-        #
-        # X_training = X.sel(time=X.time.dt.year.isin(X_anios_training))
-        # X_testing = X.sel(time=X.time.dt.year.isin(X_anios_testing))
-        #
-        # Y_training = Y.sel(time=Y.time.dt.year.isin(Y_anios_training))
-        # Y_testing = Y.sel(time=Y.time.dt.year.isin(Y_anios_testing))
-        #
-        # adj, b_verif = CCA_mod(X=X_training, X_test=X_testing,
-        #                        Y=Y_training, var_exp=var_exp)
-        #
-        # adj_rs = adj.reshape(adj.shape[0],
-        #                      len(Y.lat.values),
-        #                      len(Y.lon.values),
-        #                      adj.shape[2])
-        #
-        # adj_xr = xr.DataArray(adj_rs, dims=['time', 'lat', 'lon', 'modo'],
-        #                       coords={'lat': Y.lat.values,
-        #                               'lon': Y.lon.values,
-        #                               'time': X_testing.time.values,
-        #                               'modo': np.arange(0, adj_rs.shape[-1])})
-        #
-        # adj_xr = (adj_xr.sum('modo') * Y_training.var('time')[
-        #     list(Y.data_vars)[0]]
-        #           / (var_exp))
-        # mod_adj = adj_xr.to_dataset(name=list(Y.data_vars)[0])
-        # mod_adj['time'] = Y_testing.time.values
-        #
-        #
-        # X_training = X.sel(time=X.time.dt.year.isin(X_anios_training))
-        # X_testing = X.sel(time=X.time.dt.year.isin(X_anios_testing))
-        #
-        # Y_training = Y.sel(time=Y.time.dt.year.isin(Y_anios_training))
-        # Y_testing = Y.sel(time=Y.time.dt.year.isin(Y_anios_testing))
-        #
-        # adj, b_verif = CCA_mod(X=X_training, X_test=X_testing,
-        #                        Y=Y_training, var_exp=var_exp)
-        #
-        # adj_rs = adj.reshape(adj.shape[0],
-        #                      len(Y.lat.values),
-        #                      len(Y.lon.values),
-        #                      adj.shape[2])
-        #
-        # adj_xr = xr.DataArray(adj_rs, dims=['time', 'lat', 'lon', 'modo'],
-        #                       coords={'lat': Y.lat.values,
-        #                               'lon': Y.lon.values,
-        #                               'time': X_testing.time.values,
-        #                               'modo': np.arange(0, adj_rs.shape[-1])})
-        #
-        # adj_xr = (adj_xr.sum('modo') * Y_training.var('time')[
-        #     list(Y.data_vars)[0]]
-        #           / (var_exp))
-        # mod_adj = adj_xr.to_dataset(name=list(Y.data_vars)[0])
-        # mod_adj['time'] = Y_testing.time.values
-        #
-        # data_to_verif = Y_testing - Y_training.mean('time')
-
     else:
         adj_f, data_to_verif_f = None
 
@@ -1906,12 +1843,16 @@ def CCA_calibracion_training_testing(X_modelo, Y_observacion, var_exp,
                                                   0, adj_rs.shape[-1])})
 
                 # sumamos todos los modos y escalamos para reconstruir los datos
-                adj_xr = (adj_xr.sum('modo') * Y_training.std('time')[
-                    list(X.data_vars)[0]] / (var_exp))
+
+                Y_training_mean, Y_training_std = normalize_and_fill(
+                    Y_training)[1:3]
+
+                adj_xr = ((adj_xr.sum(
+                    'modo') * Y_training_std) + Y_training_mean) / (var_exp)
 
                 mod_adj.append(adj_xr)
 
-            data_to_verif = Y_testing - Y_training.mean('time')
+            data_to_verif = Y_testing# - Y_training_mean
 
             mod_adj = xr.concat(mod_adj, dim='r')
             mod_adj['r'] = X_testing['r']
@@ -2109,19 +2050,29 @@ def CCA_mod_CV(X, Y, var_exp,
                                       'lon': Y.lon.values,
                                       'modo': np.arange(0, adj_aux.shape[-1])})
 
+        Y_training_mean, Y_training_std = normalize_and_fill(
+            Y_training)[1:3]
+
         # sumamos todos los modos y escalamos para reconstruir los datos
-        adj_xr = (adj_xr.sum('modo') * Y_training.std('time')[var_name]
-                  / (var_exp))
+        adj_xr = ((adj_xr.sum(
+            'modo') * Y_training_std) + Y_training_mean) / (var_exp)
+
+        # adj_xr = (adj_xr.sum('modo') * Y_training.std('time')[var_name]
+        #           / (var_exp))
 
         mod_adj.append(adj_xr)
 
     mod_adj_ct = xr.concat(mod_adj, dim='time')
-    mod_adj_ct['time'] = fechas
+    if X_test is None:
+        mod_adj_ct['time'] = fechas_testing
+    else:
+        mod_adj_ct['time'] = fechas
+
     mod_adj_ct = mod_adj_ct.to_dataset(name=var_name)
 
     Y_to_verif = Y.sel(time=fechas_testing)
 
-    return mod_adj_ct, Y_to_verif-Y_to_verif.mean('time')
+    return mod_adj_ct, Y_to_verif#-Y_to_verif.mean('time')
 
 def CCA_calibracion_CV_OLD(X_modelo_full, Y, var_exp, window_years):
     """

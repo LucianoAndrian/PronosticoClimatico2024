@@ -47,11 +47,11 @@ PlotContourf_SA(mod_gem, mae_sin_c,
                 scale=np.arange(0, 180, 20), cmap='YlOrRd',
                 title='MAE precipitación - GEM5-NEMO Sin Calibrar')
 
-mae_sin_c = MAE(mod_gem_prec_cal, data_to_verif)
+mae_cal_mean_sd = MAE(mod_gem_prec_cal, data_to_verif)
 
-PlotContourf_SA(mod_gem, mae_sin_c,
+PlotContourf_SA(mod_gem, mae_cal_mean_sd,
                 scale=np.arange(0, 180, 20), cmap='YlOrRd',
-                title='MAE precipitación - GEM5-NEMO Sin Calibrar')
+                title='MAE precipitación - GEM5-NEMO Calibado Media-SD')
 
 # ---------------------------------------------------------------------------- #
 # Ejemplo de calibracion con CCA usando training y testing
@@ -72,18 +72,12 @@ mod_gem_calibrado_cca_tt, data_to_verif_cal_cca_tt = (
 print(mod_gem_calibrado_cca_tt.dims)
 # Obtenemos el modelo calibrado con las mismas dimenciones que el sin calibrar
 
-anom_mod_gem = mod_gem-mod_gem.mean(['r', 'time'])
-mae_sin_c = MAE(anom_mod_gem, data_to_verif_cal_cca_tt)
 
-PlotContourf_SA(mod_gem, mae_sin_c,
-                scale=np.arange(0,50,5), cmap='YlOrRd',
-                title='MAE precipitación - GEM5-NEMO Sin Calibrar')
+mae_cal_cca_tt = MAE(mod_gem_calibrado_cca_tt, data_to_verif_cal_cca_tt)
 
-mae_sin_c = MAE(mod_gem_calibrado_cca_tt, data_to_verif_cal_cca_tt)
-
-PlotContourf_SA(mod_gem, mae_sin_c,
-                scale=np.arange(0, 50, 5), cmap='YlOrRd',
-                title='MAE precipitación - GEM5-NEMO Sin Calibrar')
+PlotContourf_SA(mod_gem, mae_cal_cca_tt,
+                scale=np.arange(0, 180, 20), cmap='YlOrRd',
+                title='MAE precipitación - GEM5-NEMO Sin Calibado CCA-TT')
 
 # ---------------------------------------------------------------------------- #
 # Ejemplo de calibracion con CCA usando validacion cruzada
@@ -101,20 +95,21 @@ mod_gem_calibrado_cca_cv, data_to_verif_cal_cca_cv = (
 print(mod_gem_calibrado_cca_cv.dims)
 # Igual que el anterior
 
+# Tecnicamente no deberiamos comparar con el primer grafico sin calibrar ya que:
 # Al usar CV con ventana de 3 años perdemos los extremos
-anom_mod_gem = mod_gem.sel(time=slice('1984-08-01', '2019-08-01'))- \
-               mod_gem.mean(['r', 'time'])
-mae_sin_c = MAE(anom_mod_gem, data_to_verif_cal_cca_cv)
+# (da practicamente igual)
+anom_mod_gem = mod_gem.sel(time=slice('1984-08-01', '2019-08-01'))
+mae_sin_c2 = MAE(anom_mod_gem, data_to_verif_cal_cca_cv)
 
-PlotContourf_SA(mod_gem, mae_sin_c,
-                scale=np.arange(0, 50, 5), cmap='YlOrRd',
+PlotContourf_SA(mod_gem, mae_sin_c2,
+                scale=np.arange(0, 180, 20), cmap='YlOrRd',
                 title='MAE precipitación - GEM5-NEMO Sin Calibrar')
 
-mae_sin_c = MAE(mod_gem_calibrado_cca_cv, data_to_verif_cal_cca_cv)
+mae_cal_cca_cv = MAE(mod_gem_calibrado_cca_cv, data_to_verif_cal_cca_cv)
 
-PlotContourf_SA(mod_gem, mae_sin_c,
-                scale=np.arange(0, 50, 5), cmap='YlOrRd',
-                title='MAE precipitación - GEM5-NEMO Sin Calibrar')
+PlotContourf_SA(mod_gem, mae_cal_cca_cv,
+                scale=np.arange(0, 180, 20), cmap='YlOrRd',
+                title='MAE precipitación - GEM5-NEMO Calibrado CCA-CV')
 
 ################################################################################
 # ----------------------- Pronosticos probabilisticos ------------------------ #
@@ -133,7 +128,7 @@ fecha_pronostico = mod_gem.time.values[-6] # 2015-08-01
 
 # Si el modelo ya fue calibrado, debemos dar las observaciones para que la
 # funcion tome de alli los terciles para comparar
-prono_prob_gem = Prono_Qt(modelo=mod_gem_prec_cal,  # calibrado con cv
+prono_prob_gem = Prono_Qt(modelo=mod_gem_calibrado_cca_cv,  # calibrado con cv. PROBAR CON LOS OTROS
                           fecha_pronostico=fecha_pronostico,
                           obs_referencia=prec)
 
@@ -154,7 +149,7 @@ Plot_CategoriaMasProbable(data_categorias=prono_prob_gem,
                                  f"{fecha_pronostico.year}")
 
 # Si el modelo no fue calibrado, obs_referencia=None
-prono_prob_gem = Prono_Qt(modelo=mod_gem_prec_cal,
+prono_prob_gem = Prono_Qt(modelo=mod_gem,
                           fecha_pronostico=fecha_pronostico,
                           obs_referencia=None)
 
@@ -169,7 +164,7 @@ Plot_CategoriaMasProbable(data_categorias=prono_prob_gem,
 # Luego se comparan terciles igual que antes.
 # ---------------------------------------------------------------------------- #
 # Argumentos y salida de la funcion son los mismos que para Prono_Qt()
-prono_prob_cm4 = Prono_AjustePDF(modelo=mod_gem_prec_cal,
+prono_prob_cm4 = Prono_AjustePDF(modelo=mod_gem_calibrado_cca_cv,
                                  fecha_pronostico=fecha_pronostico,
                                  obs_referencia=prec)
 

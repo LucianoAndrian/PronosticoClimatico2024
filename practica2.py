@@ -128,6 +128,7 @@ PlotContourf_SA(data=prec_reconstruccion_tt,
 
 # Si queremos ver ese año pero en anomalia
 from funciones_practicas import SingleAnomalia_CV
+
 pp_mlr_2015 = SingleAnomalia_CV(prec_reconstruccion_tt, 2015)
 
 PlotContourf_SA(data=pp_mlr_2015,
@@ -283,7 +284,6 @@ prec_sel = prec.sel(lon=slice(280, 320), lat=slice(-45,-20))
 # SST
 sst = xr.open_dataset(f'{ruta}sst_ERSSTv5_1980-2020.nc')
 sst = sst.sel(lon=slice(150, 280), lat=slice(15,-15))
-sst = sst.drop_var('nbnds')
 
 # SLP
 slp = xr.open_dataset(f'{ruta}slp_NCEP_1980-2020.nc')
@@ -370,13 +370,13 @@ print(prec_anom_to_verif_tt)
 # Reconstruido
 Plot(data=prec_anom_cca_tt,
      data_var=prec_anom_cca_tt.sel(time='2015-11-01').prec[0,:,:],
-     scale=np.arange(-120, 120, 20), cmap='BrBG',
+     scale=np.arange(0, 200, 20), cmap='Blues',
      title='Anomalia Prec. Reconstrucción CCA-tt - OND-2015')
 
 # Observado
 Plot(data=prec_anom_to_verif_tt,
      data_var=prec_anom_to_verif_tt.sel(time='2015-11-01').prec[0,:,:],
-     scale=np.arange(-100, 120, 20), cmap='BrBG',
+     scale=np.arange(0, 200, 20), cmap='Blues',
      title='Anomalia Prec. observada - OND-2015')
 
 ################################################################################
@@ -394,13 +394,13 @@ pp_anom_cca_cv, prec_anom_to_verif_cv  = CCA_mod_CV(X=slp, Y=prec_sel,
 
 Plot(data=pp_anom_cca_cv,
      data_var=pp_anom_cca_cv.sel(time='2015-11-01').prec[0,:,:],
-     scale=np.arange(-120, 120, 20), cmap='BrBG',
+     scale=np.arange(0, 200, 20), cmap='Blues',
      title='Anomalia Prec. Reconstrucción CCA-cv - OND-2015')
 
 # Observado
 Plot(data=prec_anom_to_verif_cv,
      data_var=prec_anom_to_verif_cv.sel(time='2015-11-01').prec[0,:,:],
-     scale=np.arange(-100, 120, 20), cmap='BrBG',
+     scale=np.arange(0, 200, 20), cmap='Blues',
      title='Anomalia Prec. observada - OND-2015')
 
 ################################################################################
