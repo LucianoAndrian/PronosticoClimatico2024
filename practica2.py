@@ -7,7 +7,7 @@ import numpy as np
 
 from funciones_practicas import (PlotContourf_SA, ACC, Compute_MLR,
                                  Compute_MLR_training_testing,
-                                 Compute_MLR_CV_2)
+                                 Compute_MLR_CV)
 # ---------------------------------------------------------------------------- #
 ruta = '~/PronoClim/obs_seteadas/'
 
@@ -222,13 +222,13 @@ PlotContourf_SA(acc_result,
 # TOMA UNOS 5-6 MINUTOS
 # ---------------------------------------------------------------------------- #
 prec_regresion_cv, prec_regresion_anomalias_cv, prec_reconstruccion_cv = \
-    Compute_MLR_CV_2(predictando=prec, mes_predictando=10,
-                     predictores=[n34, dmi, sam],
-                     meses_predictores=[8,8,8],
-                     predictando_trimestral=True,
-                     predictores_trimestral=False,
-                     anios_predictores=None,
-                     window_years=3) # Ventana de anios a considerar en la cv
+    Compute_MLR_CV(predictando=prec, mes_predictando=10,
+                   predictores=[n34, dmi, sam],
+                   meses_predictores=[8,8,8],
+                   predictando_trimestral=True,
+                   predictores_trimestral=False,
+                   anios_predictores=None,
+                   window_years=3) # Ventana de anios a considerar en la cv
 
 PlotContourf_SA(data=prec_regresion_cv,
                 data_var=prec_regresion_cv.sel(coef='nino34_1'),
@@ -424,8 +424,7 @@ pp_anom_cca_cv, prec_anom_to_verif_cv  = CCA_mod_CV(X=slp, Y=prec_sel,
                                                     Y_trimestral=True,
                                                     X_anios=[1983, 2020],
                                                     Y_anios=[1983, 2020],
-                                                    window_years=3,
-                                                    X_test=None) # en practica 3
+                                                    window_years=3)
 
 Plot(data=pp_anom_cca_cv,
      data_var=pp_anom_cca_cv.sel(time='2015-10-01').squeeze().prec,

@@ -807,7 +807,7 @@ def Compute_MLR_training_testing(predictando=None, mes_predictando=None,
     return output0, output1, output2#, output3
 
 # ---------------------------------------------------------------------------- #
-def Compute_MLR_CV(xrds, predictores, window_years, intercept=True):
+def Compute_MLR_CV_OLD(xrds, predictores, window_years, intercept=True):
     """
     Funcion de EJEMPLO de MLR con validación cruzada.
 
@@ -887,7 +887,7 @@ def Compute_MLR_CV(xrds, predictores, window_years, intercept=True):
 
     return regre_result_cv, ds_out_years_cv, predictores_years_out
 
-def Compute_MLR_CV_2(predictando, mes_predictando=None,
+def Compute_MLR_CV(predictando, mes_predictando=None,
                 predictores=None, meses_predictores=None,
                 predictando_trimestral=True,
                 predictores_trimestral=False,
