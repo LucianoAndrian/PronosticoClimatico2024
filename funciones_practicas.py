@@ -286,7 +286,7 @@ def ACC_Teorico(data):
     return theo_acc
 
 # ---------------------------------------------------------------------------- #
-def PlotContourf_SA(data, data_var, scale, cmap, title, mask_land=False,
+def PlotContourf_SA(data, data_var, scale, cmap, title, mask_ocean=False,
                     mask_andes=False):
     """
     Funcion de ejemplo de ploteo de datos georeferenciados
@@ -305,10 +305,10 @@ def PlotContourf_SA(data, data_var, scale, cmap, title, mask_land=False,
     ax = plt.axes(projection=ccrs.PlateCarree(central_longitude=180))
     ax.set_extent([275, 330, -60, 20], crs=crs_latlon)
 
-    if mask_land is True:
+    if mask_ocean is True:
         try:
-            mask_land = MakeMask(data_var)
-            data_var = data_var * mask_land.mask
+            mask_ocean = MakeMask(data_var)
+            data_var = data_var * mask_ocean.mask
         except:
             print('regionmask no instalado, no se ensmacarará el océano')
             print('se puede instalar en el entorno con pip install regionmask')
@@ -1354,7 +1354,7 @@ def CCA(X, Y, var_exp=0.7, dataarray_pq_outputs=False):
     return P, Q, heP, heQ, S, A, B
 
 def Compute_CCA(X, Y, var_exp=0.7, X_mes=None, Y_mes=None,
-                X_trim=False, Y_trim=False,
+                X_trimestral=False, Y_trimestral=False,
                 X_anios=None, Y_anios=None):
 
     compute = True
@@ -1385,12 +1385,12 @@ def Compute_CCA(X, Y, var_exp=0.7, X_mes=None, Y_mes=None,
 
     if compute is True:
         # Set data
-        if X_trim is True:
+        if X_trimestral is True:
             X = X.rolling(time=3, center=True).mean('time')
             # Si se hace promedio movil perdemos los extremos y CCA no admite NaNs
             X = X.sel(time=X.time.isin(X.time.values[1:-1]))
 
-        if Y_trim is True:
+        if Y_trimestral is True:
             Y = Y.rolling(time=3, center=True).mean('time')
             Y = Y.sel(time=Y.time.isin(Y.time.values[1:-1]))
 
@@ -1533,7 +1533,7 @@ def CCA_training_testing_OLD(X, Y, var_exp,
 
 def CCA_training_testing(X, Y, var_exp,
                          X_mes=None, Y_mes=None,
-                         X_trim=False, Y_trim=False,
+                         X_trimestral=False, Y_trimestral=False,
                          X_anios=None, Y_anios=None,
                          anios_training=[1983, 2010],
                          anios_testing=[2011, 2020],
@@ -1581,12 +1581,12 @@ def CCA_training_testing(X, Y, var_exp,
     if compute is True:
         plus_anio = np.abs(X_anios_values[-1]-Y_anios_values[-1])
         # Set data
-        if X_trim is True:
+        if X_trimestral is True:
             X = X.rolling(time=3, center=True).mean('time')
             # Si se hace promedio movil perdemos los extremos y CCA no admite NaNs
             X = X.sel(time=X.time.isin(X.time.values[1:-1]))
 
-        if Y_trim is True:
+        if Y_trimestral is True:
             Y = Y.rolling(time=3, center=True).mean('time')
             Y = Y.sel(time=Y.time.isin(Y.time.values[1:-1]))
 
@@ -1738,7 +1738,7 @@ def CCA_calibracion_training_testing_OLD(X_modelo_full, Y_observaciones, var_exp
     return mod_adj, Y_testing-Y_training.mean('time')
 
 def CCA_calibracion_training_testing(X_modelo, Y_observacion, var_exp,
-                                     Y_mes=None, Y_trim=False,
+                                     Y_mes=None, Y_trimestral=False,
                                      X_anios=None, Y_anios=None,
                                      anios_training=[1983, 2010],
                                      anios_testing=[2011, 2020],
@@ -1773,12 +1773,12 @@ def CCA_calibracion_training_testing(X_modelo, Y_observacion, var_exp,
     if compute is True:
         plus_anio = np.abs(X_anios_values[-1]-Y_anios_values[-1])
         # Set data
-        # if X_trim is True:
+        # if X_trimestral is True:
         #     X = X_modelo.rolling(time=3, center=True).mean('time')
         #     # Si se hace promedio movil perdemos los extremos y CCA no admite NaNs
         #     X = X.sel(time=X.time.isin(X.time.values[1:-1]))
 
-        if Y_trim is True:
+        if Y_trimestral is True:
             Y = Y.rolling(time=3, center=True).mean('time')
             Y = Y.sel(time=Y.time.isin(Y.time.values[1:-1]))
 
@@ -1942,7 +1942,7 @@ def CCA_mod_CV_OLD(X, Y, var_exp, window_years, X_test=None):
 
 def CCA_mod_CV(X, Y, var_exp,
                  X_mes=None, Y_mes=None,
-                 X_trim=False, Y_trim=False,
+                 X_trimestral=False, Y_trimestral=False,
                  X_anios=None, Y_anios=None,
                  window_years=3, X_test=None):
 
@@ -1989,12 +1989,12 @@ def CCA_mod_CV(X, Y, var_exp,
 
     if compute is True:
         # Set data
-        if X_trim is True:
+        if X_trimestral is True:
             X = X.rolling(time=3, center=True).mean('time')
             # Si se hace promedio movil perdemos los extremos y CCA no admite NaNs
             X = X.sel(time=X.time.isin(X.time.values[1:-1]))
 
-        if Y_trim is True:
+        if Y_trimestral is True:
             Y = Y.rolling(time=3, center=True).mean('time')
             Y = Y.sel(time=Y.time.isin(Y.time.values[1:-1]))
 
@@ -2006,7 +2006,7 @@ def CCA_mod_CV(X, Y, var_exp,
         Y = Y.sel(time=Y.time.dt.month.isin(Y_mes))
 
         if X_test is not None:
-            if X_trim is True:
+            if X_trimestral is True:
                 X_test = X_test.rolling(time=3, center=True).mean('time')
                 X_test = X_test.sel(time=X_test.time.isin(X.time.values[1:-1]))
 
@@ -2104,7 +2104,7 @@ def CCA_calibracion_CV_OLD(X_modelo_full, Y, var_exp, window_years):
     return mod_adj_xr, Y_to_verif
 
 def CCA_calibracion_CV(X_modelo, Y_observacion, var_exp,
-                       Y_mes=None, Y_trim=False,
+                       Y_mes=None, Y_trimestral=False,
                        X_anios=None, Y_anios=None,
                        window_years=3):
 
@@ -2116,7 +2116,7 @@ def CCA_calibracion_CV(X_modelo, Y_observacion, var_exp,
                                      X_test=X_modelo.sel(r=r),
                                      var_exp=var_exp,
                                      X_mes=X_mes, Y_mes=Y_mes,
-                                     X_trim=False, Y_trim=Y_trim,
+                                     X_trimestral=False, Y_trimestral=Y_trimestral,
                                      X_anios=X_anios, Y_anios=Y_anios,
                                      window_years=window_years)
         mod_adj.append(adj)
@@ -2208,7 +2208,7 @@ def Calibracion_MediaSD_OLD(mod, obs):
 
     return calibrated_t
 
-def Calibracion_MediaSD(X_modelo, Y_observacion, Y_mes, Y_trim=False,
+def Calibracion_MediaSD(X_modelo, Y_observacion, Y_mes, Y_trimestral=False,
                         X_anios=[], Y_anios=[]):
     """
     Calibra removiendo la media y desvio standard del modelo y luego
@@ -2252,7 +2252,7 @@ def Calibracion_MediaSD(X_modelo, Y_observacion, Y_mes, Y_trim=False,
         print('X_anios, Y_anios deben ser None o list, ambos.')
         compute = False
 
-    if Y_trim:
+    if Y_trimestral:
         obs = Y.rolling(time=3, center=True).mean('time')
 
     obs = obs.sel(time=obs.time.dt.month.isin(Y_mes))
@@ -2527,7 +2527,7 @@ def MakeMask(DataArray, dataname='mask'):
 
 def Plot_CategoriaMasProbable(data_categorias, variable,
                               titulo='Categoria más probable',
-                              mask_land=False,
+                              mask_ocean=False,
                               mask_andes = False):
     """
     Plotea la salida de Prono_Qt graficando la en cada punto de reticula
@@ -2572,10 +2572,10 @@ def Plot_CategoriaMasProbable(data_categorias, variable,
 
     # Categoria mas probable en cada punto de reticula
     categoria_mas_probable = data_categorias.argmax(dim="category")
-    if mask_land is True:
+    if mask_ocean is True:
         try:
-            mask_land = MakeMask(categoria_mas_probable)
-            categoria_mas_probable = categoria_mas_probable * mask_land.mask
+            mask_ocean = MakeMask(categoria_mas_probable)
+            categoria_mas_probable = categoria_mas_probable * mask_ocean.mask
         except:
             print('regionmask no instalado, no se ensmacarará el océano')
             print('se puede instalar en el entorno con pip install regionmask')
@@ -2625,7 +2625,7 @@ def Plot_CategoriaMasProbable(data_categorias, variable,
     plt.tight_layout(rect=[0, 0, 0.9, 1])
     plt.show()
 
-def PlotPcolormesh_SA(data, data_var, scale, cmap, title, mask_land=False):
+def PlotPcolormesh_SA(data, data_var, scale, cmap, title, mask_ocean=False):
     """
     Funcion de ejemplo de ploteo de datos georeferenciados
 
@@ -2638,10 +2638,10 @@ def PlotPcolormesh_SA(data, data_var, scale, cmap, title, mask_land=False):
     """
     crs_latlon = ccrs.PlateCarree()
 
-    if mask_land is True:
+    if mask_ocean is True:
         try:
-            mask_land = MakeMask(data_var)
-            data_var = data_var * mask_land.mask
+            mask_ocean = MakeMask(data_var)
+            data_var = data_var * mask_ocean.mask
         except:
             print('regionmask no instalado, no se ensmacarará el océano')
             print('se puede instalar en el entorno con pip install regionmask')

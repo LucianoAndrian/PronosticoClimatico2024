@@ -20,6 +20,7 @@ from funciones_practicas import CCA_calibracion_training_testing, \
 
 # Funcion auxiliar solo para mostrar el efecto de la calibracion.
 # calcularán esta metricas y otras similares en la practica 4
+# Mean Absolute Error
 def MAE(data1, data2):
 
     if 'r' in data1._dims:
@@ -37,7 +38,7 @@ def MAE(data1, data2):
 # ---------------------------------------------------------------------------- #
 mod_gem_prec_cal, data_to_verif = Calibracion_MediaSD(
     X_modelo=mod_gem, Y_observacion=prec,
-    Y_mes=10, Y_trim=True,
+    Y_mes=10, Y_trimestral=True,
     X_anios=[1983, 2020],
     Y_anios=[1983, 2020])
 
@@ -62,16 +63,15 @@ mod_gem_calibrado_cca_tt, data_to_verif_cal_cca_tt = (
         Y_observacion=prec,
         var_exp=0.7,
         Y_mes=10,
-        Y_trim=True,
-        X_anios=[1983, 2020],  # periodo para X
-        Y_anios=[1983, 2020],  # periodo para Y, deben tener la misma longitud
+        Y_trimestral=True,
+        X_anios=[1983, 2020],
+        Y_anios=[1983, 2020],
         anios_training=[1983, 2000],  # testing
         anios_testing=[2001, 2020],  # training
         reconstruct_full=True)) # Similar a la practica 2
 
 print(mod_gem_calibrado_cca_tt.dims)
 # Obtenemos el modelo calibrado con las mismas dimenciones que el sin calibrar
-
 
 mae_cal_cca_tt = MAE(mod_gem_calibrado_cca_tt, data_to_verif_cal_cca_tt)
 
@@ -87,9 +87,9 @@ mod_gem_calibrado_cca_cv, data_to_verif_cal_cca_cv = (
         X_modelo=mod_gem,
         Y_observacion=prec,
         var_exp=0.7,
-        Y_mes=10, Y_trim=True,
-        X_anios=[1983, 2020],  # periodo para X
-        Y_anios=[1983, 2020],  # periodo para Y, deben tener la misma longitud
+        Y_mes=10, Y_trimestral=True,
+        X_anios=[1983, 2020],
+        Y_anios=[1983, 2020],
         window_years=3))
 
 print(mod_gem_calibrado_cca_cv.dims)
@@ -126,11 +126,11 @@ print(mod_gem.time.values)
 
 fecha_pronostico = mod_gem.time.values[-6] # 2015-08-01
 
-# Si el modelo ya fue calibrado, debemos dar las observaciones para que la
-# funcion tome de alli los terciles para comparar
-prono_prob_gem = Prono_Qt(modelo=mod_gem_calibrado_cca_cv,  # calibrado con cv. PROBAR CON LOS OTROS
+# Si el modelo ya fue calibrado, debemos dar las observaciones (obs_referencia)
+# para que la funcion tome de alli los terciles para comparar
+prono_prob_gem = Prono_Qt(modelo=mod_gem_prec_cal,  # calibrado con media y sd. PROBAR CON LOS OTROS
                           fecha_pronostico=fecha_pronostico,
-                          obs_referencia=prec)
+                          obs_referencia=prec) # <-- Si el modelo fue calibrado
 
 print(prono_prob_gem.shape)
 print(prono_prob_gem)
@@ -151,10 +151,10 @@ Plot_CategoriaMasProbable(data_categorias=prono_prob_gem,
 # Si el modelo no fue calibrado, obs_referencia=None
 prono_prob_gem = Prono_Qt(modelo=mod_gem,
                           fecha_pronostico=fecha_pronostico,
-                          obs_referencia=None)
+                          obs_referencia=None) # <-- Modelo no calibrado
 
 Plot_CategoriaMasProbable(data_categorias=prono_prob_gem,
-                          variable='prec', # para el color de las categorias
+                          variable='prec',
                           titulo=f"Pronostico probabilistico  GEM5-NEMO - SON "
                                  f"{fecha_pronostico.year}")
 
@@ -164,15 +164,15 @@ Plot_CategoriaMasProbable(data_categorias=prono_prob_gem,
 # Luego se comparan terciles igual que antes.
 # ---------------------------------------------------------------------------- #
 # Argumentos y salida de la funcion son los mismos que para Prono_Qt()
-prono_prob_cm4 = Prono_AjustePDF(modelo=mod_gem_calibrado_cca_cv,
+prono_prob_cm4 = Prono_AjustePDF(modelo=mod_gem_calibrado_cca_tt, # Calibrado con CCA-CV
                                  fecha_pronostico=fecha_pronostico,
                                  obs_referencia=prec)
 
 # En cada punto de reticula se grafica la categoria mas probable
 Plot_CategoriaMasProbable(data_categorias=prono_prob_cm4,
-                          variable='prec', # para el color de las categorias
+                          variable='prec',
                           titulo=f"Pronostico probabilistico CanCM4i-IC3 - SON "
                                  f"{fecha_pronostico.year} \n Ajuste Gaussiano",
-                          mask_land=True, mask_andes=True)
+                          mask_ocean=True, mask_andes=True)
 # ---------------------------------------------------------------------------- #
 # ---------------------------------------------------------------------------- #
