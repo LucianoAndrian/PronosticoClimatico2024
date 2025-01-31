@@ -34,8 +34,8 @@ sam = xr.open_dataset('~/PronoClim/indices_nc/sam_mmean.nc')
 # indices nino34, dmi y sam: pp = b1*n34 + b2*dmi + b3*sam + c
 
 # predictores en agosto para precipitacion en Septiembre-Octubre-Noviembre (SON)
-prec_regresion_son, prec_regresion_anomalias_son, prec_reconstruccion_son = \
-    Compute_MLR(
+prec_regresion_son, prec_regresion_anomalias_son, prec_reconstruccion_son, \
+    prec_to_verif_son = Compute_MLR(
     predictando=prec,
     mes_predictando=10, # Octubre
     predictores = [n34, dmi, sam], # Normalizados dentro de la funcion
@@ -94,8 +94,8 @@ anios_predictores = [np.arange(1982,2020), # DMI un año antes que prec
                      np.arange(1982,2020), # N34 un año antes que prec
                      prec.time.dt.year]  # SAM en el mismo año que prec
 
-prec_regresion_fma, prec_regresion_anomalias_fma, prec_reconstruccion_fma = \
-    Compute_MLR(
+prec_regresion_fma, prec_regresion_anomalias_fma, prec_reconstruccion_fma, \
+    prec_to_verif_mlr_fma = Compute_MLR(
         predictando=prec,
         mes_predictando=3,  # Marzo (mes central de FMA)
         predictores=[n34, dmi, sam],
@@ -123,17 +123,19 @@ PlotContourf_SA(data=prec_reconstruccion_fma,
 # ---------------------------------------------------------------------------- #
 # Se le deben dar a la funcion los anios del comienzo y final de los periodos
 # que van a ser usados como training y testing
-prec_regresion_tt, prec_regresion_anomalias_tt, prec_reconstruccion_tt = (
-    Compute_MLR_training_testing(predictando=prec, mes_predictando=10, # Oct
-                                 predictores=[n34, dmi, sam],
-                                 meses_predictores=[8,8,8], # Ago
-                                 anios_training=[1983, 2000], # Training
-                                 anios_testing=[2001, 2020], # Testing
-                                 predictando_trimestral=True, #Oct --> SON
-                                 predictores_trimestral=False,
-                                 anios_predictores_testing = None, # ***
-                                 anios_predictores_training = None, # ***
-                                 reconstruct_full = False)) # ****
+prec_regresion_tt, prec_regresion_anomalias_tt, prec_reconstruccion_tt, \
+    prec_to_verif_tt = Compute_MLR_training_testing(
+    predictando=prec, mes_predictando=10, # Oct
+    predictores=[n34, dmi, sam],
+    meses_predictores=[8, 8, 8],  # Ago
+    anios_training=[1983, 2000],  # Training
+    anios_testing=[2001, 2020],  # Testing
+    predictando_trimestral=True,  # Oct --> SON
+    predictores_trimestral=False,
+    anios_predictores_testing=None,  # ***
+    anios_predictores_training=None,  # ***
+    reconstruct_full=False)  # ****
+
 # Los resultados tienen la misma forma que en Compute_MLR
 
 # Ejemplo graficar un año de los reconstruidos
@@ -183,29 +185,28 @@ PlotContourf_SA(data=pp_obs_2015,
 # DEBE SER CONSISTENTE ENTRE meses_predictores, anios_training y anios_testing
 
 # Un ejemplo combianando las dos cosas:
-prec_regresion_tt2, prec_regresion_anomalias_tt2, prec_reconstruccion_tt_full  = \
-    Compute_MLR_training_testing(predictando=prec, mes_predictando=3,
-                                 predictores=[n34, dmi, sam],
-                                 meses_predictores=[10,11,1],
-                                 anios_training=[1983, 2000],
-                                 anios_testing=[2001, 2020],
-                                 predictando_trimestral = True,
-                                 predictores_trimestral = False,
+prec_regresion_tt2, prec_regresion_anomalias_tt2, prec_reconstruccion_tt_full, \
+    prec_to_verif_tt_full  = Compute_MLR_training_testing(
+    predictando=prec, mes_predictando=3,
+    predictores=[n34, dmi, sam],
+    meses_predictores=[10, 11, 1],
+    anios_training=[1983, 2000],
+    anios_testing=[2001, 2020],
+    predictando_trimestral=True,
+    predictores_trimestral=False,
 
-                                 # Modificamos estos argumentos:
-                                 anios_predictores_testing = [[2000,2019],
-                                                              [2000,2019],
-                                                              [2001, 2020]],
-                                 anios_predictores_training = [[1982,1999],
-                                                              [1982, 1999],
-                                                              [1983, 2000]],
-                                 reconstruct_full = True)
+    # Modificamos estos argumentos:
+    anios_predictores_testing=[[2000, 2019],
+                               [2000, 2019],
+                               [2001, 2020]],
+    anios_predictores_training=[[1982, 1999],
+                                [1982, 1999],
+                                [1983, 2000]],
+    reconstruct_full=True)
 
 # Con todos estos resultados anteriores tambien se puede operar
-# ejemplo ACC con prec_reconstruccion
-prec_fma = prec.sel(time=prec.time.dt.month.isin(3)) # seleccion del mismo periodo
 
-acc_result = ACC(prec_fma, prec_reconstruccion_tt_full, cvanomaly=True,
+acc_result = ACC(prec_to_verif_tt_full, prec_reconstruccion_tt_full, cvanomaly=True,
                  reference_time_period=[1983,2020])
 
 PlotContourf_SA(acc_result,
@@ -221,8 +222,8 @@ PlotContourf_SA(acc_result,
 # Los resultados tienen la misma forma que los anteriores
 # TOMA UNOS 5-6 MINUTOS
 # ---------------------------------------------------------------------------- #
-prec_regresion_cv, prec_regresion_anomalias_cv, prec_reconstruccion_cv = \
-    Compute_MLR_CV(predictando=prec, mes_predictando=10,
+prec_regresion_cv, prec_regresion_anomalias_cv, prec_reconstruccion_cv, \
+    prec_to_verif_cv = Compute_MLR_CV(predictando=prec, mes_predictando=10,
                    predictores=[n34, dmi, sam],
                    meses_predictores=[8,8,8],
                    predictando_trimestral=True,

@@ -599,19 +599,18 @@ def Compute_MLR(predictando=None, mes_predictando=None,
 
         #promedio_mes_predictando = predictando.mean('time')
 
-        predictando, promedio_mes_predictando, predictando_sd = (
+        predictando_anom, promedio_mes_predictando, predictando_sd = (
             CrossAnomaly_1y(predictando, norm=True, return_mean_sd=True))
 
         mlr = MLR(predictores_set)
-        # print(predictores_set)
-        # print(predictando[variable_predictando])
-        regre = mlr.compute_MLR(predictando[variable_predictando])
-        # print(predictando_sd)
+
+        regre = mlr.compute_MLR(predictando_anom[variable_predictando])
+
         output0 = ((regre*predictando_sd) +
                    promedio_mes_predictando[variable_predictando])
         output1 = regre
 
-        reconstruc = MLR_pronostico(data=predictando,
+        reconstruc = MLR_pronostico(data=predictando_anom,
                                     regre_result=regre,
                                     predictores=predictores_set)[1]
 
@@ -620,11 +619,11 @@ def Compute_MLR(predictando=None, mes_predictando=None,
         reconstruc = reconstruc_anom + promedio_mes_predictando
 
         output2 = reconstruc
-        output3 = reconstruc_anom
+        output3 = predictando
     else:
         print('Error en formato de variables de entradas')
 
-    return output0, output1, output2
+    return output0, output1, output2, output3
 
 
 def Compute_MLR_training_testing(predictando=None, mes_predictando=None,
@@ -716,95 +715,82 @@ def Compute_MLR_training_testing(predictando=None, mes_predictando=None,
             time=predictando.time.dt.year.isin(year_training))
         predictando_training = predictando_training.sel(
             time=predictando_training.time.dt.month.isin(mes_predictando))
-        #promedio_mes_predictando_training = predictando_training.mean('time')
-        predictando_training, \
-         promedio_mes_predictando_training, sd_mes_predictando_training = \
-            CrossAnomaly_1y(predictando_training, norm=True,
-                            return_mean_sd=True)
+
+        predictando_training_anom, promedio_mes_predictando_training, \
+            sd_mes_predictando_training = CrossAnomaly_1y(
+            predictando_training, norm=True, return_mean_sd=True)
 
         # Testing
         predictando_testing = predictando.sel(
             time=predictando.time.dt.year.isin(year_testing))
         predictando_testing = predictando_testing.sel(
             time=predictando_testing.time.dt.month.isin(mes_predictando))
-        promedio_mes_predictando_testing = predictando_testing.mean('time')
-        predictando_testing, \
-            promedio_mes_predictando_testing, sd_mes_predictando_testing = \
-            CrossAnomaly_1y(predictando_testing, norm=True,
-                            return_mean_sd=True)
+
+        predictando_testing_anom, promedio_mes_predictando_testing, \
+            sd_mes_predictando_testing = CrossAnomaly_1y(
+            predictando_testing, norm=True, return_mean_sd=True)
 
         mlr = MLR(predictores_training)
+
         training_regre =  mlr.compute_MLR(
-            predictando_training[variable_predictando])
+            predictando_training_anom[variable_predictando])
+
         training_regre_full = ((training_regre*sd_mes_predictando_training) +
                                promedio_mes_predictando_training[
                                    variable_predictando])
 
-        testing_reconstruc = MLR_pronostico(predictando_testing,
+        testing_reconstruc = MLR_pronostico(predictando_testing_anom,
                                             training_regre,
                                             predictores_testing)[1]
 
-        # testing_reconstruc_full = MLR_pronostico(predictando_testing,
-        #                                          training_regre_full,
-        #                                          predictores_testing)[1]
+        testing_reconstruc_anom = testing_reconstruc * \
+                                  sd_mes_predictando_testing
 
-        testing_reconstruc_anom = ((testing_reconstruc*sd_mes_predictando_testing))
+        testing_reconstruc_full = testing_reconstruc_anom + \
+                                  promedio_mes_predictando_testing
 
-        testing_reconstruc_full = (testing_reconstruc_anom +
-                                   promedio_mes_predictando_testing)
 
         if reconstruct_full:
-            # predictando_testing = CrossAnomaly_1y(predictando_testing,
-            #                                       norm=True)
-            # predictando_testing, \
-            #     promedio_mes_predictando_testing, sd_mes_predictando_testing = \
-            #     CrossAnomaly_1y(predictando_testing, norm=True,
-            #                     return_mean_sd=True)
             # MLR
             mlr = MLR(predictores_testing)
             testing_regre = mlr.compute_MLR(
-                predictando_testing[variable_predictando])
+                predictando_testing_anom[variable_predictando])
+
             testing_regre_full = ((testing_regre*sd_mes_predictando_testing) +
                                   promedio_mes_predictando_testing[
                                       variable_predictando])
 
-            training_reconstruc = MLR_pronostico(predictando_training,
+            training_reconstruc = MLR_pronostico(predictando_training_anom,
                                                  testing_regre,
                                                  predictores_training)[1]
-
-            # training_reconstruc_full = MLR_pronostico(predictando_training,
-            #                                           testing_regre_full,
-            #                                           predictores_training)[1]
 
             training_reconstruc_anom = training_reconstruc * \
                                        sd_mes_predictando_training
 
-            training_reconstruc_full = (training_reconstruc_anom +
-                                        promedio_mes_predictando_training)
-
-            forecast = xr.concat([training_reconstruc_anom,
-                                  testing_reconstruc_anom],
-                                 dim = 'time')
+            training_reconstruc_full = training_reconstruc_anom + \
+                                        promedio_mes_predictando_training
 
             forecast_full = xr.concat([training_reconstruc_full,
-                                       testing_reconstruc_full],
-                                       dim = 'time')
+                                       testing_reconstruc_full], dim = 'time')
+
+            data_to_verif = xr.concat([predictando_training,
+                                       predictando_testing], dim= 'time')
 
             output0 = (training_regre_full + testing_regre_full)/2
             output1 = (training_regre + testing_regre)/2
             output2 = forecast_full
-            output3 = forecast
+            output3 = data_to_verif
 
         else:
             output0 = training_regre_full
             output1 = training_regre
             output2 = testing_reconstruc_full
-            output3 = testing_reconstruc
+            output3 = predictando_testing
 
     else:
         print('Error en formato de variables de entradas')
 
-    return output0, output1, output2#, output3
+    return output0, output1, output2, output3
 
 # ---------------------------------------------------------------------------- #
 def Compute_MLR_CV_OLD(xrds, predictores, window_years, intercept=True):
@@ -888,12 +874,12 @@ def Compute_MLR_CV_OLD(xrds, predictores, window_years, intercept=True):
     return regre_result_cv, ds_out_years_cv, predictores_years_out
 
 def Compute_MLR_CV(predictando, mes_predictando=None,
-                predictores=None, meses_predictores=None,
-                predictando_trimestral=True,
-                predictores_trimestral=False,
-                anios_predictores=None,
-                window_years=3,
-                intercept=True):
+                   predictores=None, meses_predictores=None,
+                   predictando_trimestral=True,
+                   predictores_trimestral=False,
+                   anios_predictores=None,
+                   window_years=3,
+                   intercept=True):
     """
     Funcion de EJEMPLO de MLR con validación cruzada.
 
@@ -1062,11 +1048,12 @@ def Compute_MLR_CV(predictando, mes_predictando=None,
                     xr.concat([years_out_reconstruct_full_cv,
                                years_out_reconstruct_full], dim='time'))
 
-    # return (regre_result_cv, regre_result_full_cv, years_out_reconstruct_cv,
-    #         years_out_reconstruct_full_cv)
     regre_result_cv = regre_result_cv.mean('k')
     regre_result_full_cv = regre_result_full_cv.mean('k')
-    return regre_result_cv, regre_result_full_cv, years_out_reconstruct_full_cv
+    predictando = predictando.sel(time=years_out_reconstruct_full_cv.time.values)
+
+    return regre_result_cv, regre_result_full_cv, \
+        years_out_reconstruct_full_cv, predictando
 
 def MLR_pronostico(data, regre_result, predictores):
 
@@ -1188,9 +1175,9 @@ def normalize_and_fill(data):
     # Normaliza
     mean = data_filled.mean(dim='time')
     std = data_filled.std(dim='time')
+    var = data_filled.var(dim='time')
 
     data_normalized = (data_filled - mean) / std
-
 
     # Aveces aparecen NaN otra vez despues del paso anterior
     data_normalized = data_normalized.fillna(0)
@@ -1198,7 +1185,7 @@ def normalize_and_fill(data):
     # Transformamos la data a (tiempo, spatial) donde spatial = lat*lon
     data_normalized = data_normalized.stack(spatial=(lat_name, lon_name))
 
-    return data_normalized, mean, std
+    return data_normalized, mean, std, var
 
 def AutoVec_Val_EOF(m, var_exp):
     """
@@ -1291,8 +1278,8 @@ def CCA(X, Y, var_exp=0.7, dataarray_pq_outputs=False):
     Y_lon = Y.lon.values
 
     # Normalizado
-    X, X_mean, X_std = normalize_and_fill(X)
-    Y, Y_mean, Y_std = normalize_and_fill(Y)
+    X, X_mean, X_std, X_var = normalize_and_fill(X)
+    Y, Y_mean, Y_std, X_var = normalize_and_fill(Y)
 
     tx = X.shape[0]
     ty = Y.shape[0]
@@ -1823,12 +1810,10 @@ def CCA_calibracion_training_testing(X_modelo, Y_observacion, var_exp,
 
             mod_adj = []
             for r in X.r.values:
-                print('test')
-                print(r)
                 adj, b_verif = CCA_mod(X=X_training.mean('r'),
                                        X_test=X_testing.sel(r=r),
                                        Y=Y_training, var_exp=var_exp)
-                print("cca done")
+
                 adj_rs = adj.reshape(adj.shape[0],
                                      len(Y.lat.values),
                                      len(Y.lon.values),
@@ -1844,11 +1829,11 @@ def CCA_calibracion_training_testing(X_modelo, Y_observacion, var_exp,
 
                 # sumamos todos los modos y escalamos para reconstruir los datos
 
-                Y_training_mean, Y_training_std = normalize_and_fill(
-                    Y_training)[1:3]
+                Y_training_mean, Y_training_std, Y_training_var =  \
+                    normalize_and_fill(Y_training)[1:4]
 
-                adj_xr = ((adj_xr.sum(
-                    'modo') * Y_training_std) + Y_training_mean) / (var_exp)
+                adj_xr = ((adj_xr.sum('modo') * Y_training_var / var_exp) * \
+                          Y_training_std + Y_training_mean)
 
                 mod_adj.append(adj_xr)
 
@@ -2050,15 +2035,11 @@ def CCA_mod_CV(X, Y, var_exp,
                                       'lon': Y.lon.values,
                                       'modo': np.arange(0, adj_aux.shape[-1])})
 
-        Y_training_mean, Y_training_std = normalize_and_fill(
-            Y_training)[1:3]
+        Y_training_mean, Y_training_std, Y_training_var = \
+            normalize_and_fill(Y_training)[1:4]
 
-        # sumamos todos los modos y escalamos para reconstruir los datos
-        adj_xr = ((adj_xr.sum(
-            'modo') * Y_training_std) + Y_training_mean) / (var_exp)
-
-        # adj_xr = (adj_xr.sum('modo') * Y_training.std('time')[var_name]
-        #           / (var_exp))
+        adj_xr = ((adj_xr.sum('modo') * Y_training_var / var_exp) * \
+                  Y_training_std + Y_training_mean)
 
         mod_adj.append(adj_xr)
 

@@ -52,7 +52,7 @@ mae_cal_mean_sd = MAE(mod_gem_prec_cal, data_to_verif)
 
 PlotContourf_SA(mod_gem, mae_cal_mean_sd,
                 scale=np.arange(0, 180, 20), cmap='YlOrRd',
-                title='MAE precipitación - GEM5-NEMO Calibado Media-SD')
+                title='MAE precipitación - GEM5-NEMO Calibrado Media-SD')
 
 # ---------------------------------------------------------------------------- #
 # Ejemplo de calibracion con CCA usando training y testing
@@ -77,7 +77,7 @@ mae_cal_cca_tt = MAE(mod_gem_calibrado_cca_tt, data_to_verif_cal_cca_tt)
 
 PlotContourf_SA(mod_gem, mae_cal_cca_tt,
                 scale=np.arange(0, 180, 20), cmap='YlOrRd',
-                title='MAE precipitación - GEM5-NEMO Sin Calibado CCA-TT')
+                title='MAE precipitación - GEM5-NEMO Calibrado CCA-TT')
 
 # ---------------------------------------------------------------------------- #
 # Ejemplo de calibracion con CCA usando validacion cruzada

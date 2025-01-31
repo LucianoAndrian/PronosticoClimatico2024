@@ -36,18 +36,6 @@ n34 = n34 - n34.mean('time') # este no está sin anomalias
 dmi = xr.open_dataset('~/PronoClim/indices_nc/iod_mmean.nc')
 sam = xr.open_dataset('~/PronoClim/indices_nc/sam_mmean.nc')
 
-# Selección de fechas que me importan.
-# En este caso (arbitrario) mismo mes que los pronosticos.
-# Agosto --> SON.
-dmi = dmi.sel(time=dmi.time.dt.year.isin(mod_gem.time.dt.year))
-#dmi = dmi.sel(time=dmi.time.dt.month.isin(9)) # septiembre
-n34 = n34.sel(time=n34.time.dt.year.isin(mod_gem.time.dt.year))
-#n34 = n34.sel(time=n34.time.dt.month.isin(8)) # agosto
-sam = sam.sel(time=sam.time.dt.year.isin(mod_gem.time.dt.year))
-#sam = sam.sel(time=sam.time.dt.month.isin(7)) # julio
-
-#prec_cv_anom = CrossAnomaly_1y(pp_son, norm=True)
-
 ################################################################################
 # ---------------------------------------------------------------------------- #
 # Los siguientes son EJEMPLOS para mostrar como se usan las funciones y el
@@ -65,28 +53,30 @@ mod_gem_calibrado_MediaSD, data_to_verif_MediaSD = Calibracion_MediaSD(
 # ---------------------------------------------------------------------------- #
 # Ejemplo 2a: ---------------------------------------------------------------- #
 # Pronostico MLR con validacion cruzada
-_, _, prec_mlr_forecast_cv = Compute_MLR_CV(predictando=prec,
-                                            mes_predictando=10,
-                                            predictores=[n34, dmi, sam],
-                                            meses_predictores=[8, 9, 7],
-                                            predictando_trimestral=True,
-                                            predictores_trimestral=False,
-                                            anios_predictores=None,
-                                            window_years=3)
+_, _, prec_mlr_forecast_cv, prec_mlr_to_verif_cv = \
+    Compute_MLR_CV(predictando=prec,
+                   mes_predictando=10,
+                   predictores=[n34, dmi, sam],
+                   meses_predictores=[8, 9, 7],
+                   predictando_trimestral=True,
+                   predictores_trimestral=False,
+                   anios_predictores=None,
+                   window_years=3)
 
 # Ejemplo2b: ----------------------------------------------------------------- #
 # Pronostico MLR con training y testing
-_, _, prec_mlr_forecast_tt = Compute_MLR_training_testing(
-    predictando=prec, mes_predictando=10,
-    predictores=[n34, dmi, sam],
-    meses_predictores=[8, 9, 7],
-    anios_training=[1983, 2000],
-    anios_testing=[2001, 2020],
-    predictando_trimestral=True,
-    predictores_trimestral=False,
-    anios_predictores_testing = None,
-    anios_predictores_training = None,
-    reconstruct_full = True)
+_, _, prec_mlr_forecast_tt, prec_mlr_to_verif_tt = \
+    Compute_MLR_training_testing(
+        predictando=prec, mes_predictando=10,
+        predictores=[n34, dmi, sam],
+        meses_predictores=[8, 9, 7],
+        anios_training=[1983, 2000],
+        anios_testing=[2001, 2020],
+        predictando_trimestral=True,
+        predictores_trimestral=False,
+        anios_predictores_testing=None,
+        anios_predictores_training=None,
+        reconstruct_full=True)
 
 # ---------------------------------------------------------------------------- #
 # ---------------------------------------------------------------------------- #
@@ -134,8 +124,8 @@ mod_gem_calibrado_cca_tt, data_to_verif_cal_cca_tt = (
 # con climpred
 
 # PROBAR reemplazando "pronostico" y "verificacion" con los ejemplos de arriba.
-pronostico = mod_gem_calibrado_cca_cv
-verificacion = data_to_verif_cal_cca_cv
+pronostico = pp_cca_forecast_cv
+verificacion = pp_cca_to_verif_cv
 
 # Ordenamos los datos para que climpred entienda...
 pronostico_set = SetPronos_Climpred(pronostico, verificacion)
@@ -164,14 +154,15 @@ for metrica in ['mae', 'rmse', 'bias', 'spearman_r']:
 # PROBAR reemplazando "pronostico" y "verificacion" modelo con y sin calibrar
 # tambien ejemplo 4a y 4b.
 
-pronostico = mod_gem_calibrado_MediaSD
-verificacion = data_to_verif_MediaSD
+pronostico = mod_gem_calibrado_cca_cv
+verificacion = data_to_verif_cal_cca_cv
 calibrado = True # IMPORTANTE! Determina como se calculan los quantiles!
 
 # Se pueden seleccionar los tiempos que se quieran evaluar
 # Recomendación: usar fechas de la variable del pronostico para evitar
 # problemas de formato
 fechas_pronostico = pronostico.time.values
+verificacion['time'] = fechas_pronostico
 
 # BSS ------------------------------------------------------------------------ #
 bss_forecast = BSS(pronostico, verificacion, fechas_pronostico, calibrado,
