@@ -1,29 +1,27 @@
 """
-Ejemplos de calculos de metricas - practica 4
+Practica 4
 """
 # ---------------------------------------------------------------------------- #
 import xarray as xr
 import numpy as np
 from climpred import HindcastEnsemble
 
-from funciones_practicas import (PlotContourf_SA, CrossAnomaly_1y,
-                                 Calibracion_MediaSD, MLR, Compute_MLR_CV,
-                                 MLR_pronostico, CCA_mod_CV,
+from funciones_practicas import (PlotContourf_SA, Calibracion_MediaSD,
+                                 Compute_MLR_CV, CCA_mod_CV,
                                  CCA_training_testing,
                                  CCA_calibracion_CV,
                                  CCA_calibracion_training_testing,
                                  SetPronos_Climpred, BSS, RPSS, ROC, REL,
                                  PlotROC, PlotRelDiag, PlotPcolormesh_SA,
                                  Compute_MLR_training_testing)
-# ---------------------------------------------------------------------------- #
-# Apertura y seteo de variables
+
 # ---------------------------------------------------------------------------- #
 ruta = '~/PronoClim/obs_seteadas/'
 
 # Prec
 prec = xr.open_dataset(f'{ruta}prec_monthly_nmme_cpc_sa.nc')
 
-# SLP - ASO
+# SLP
 slp = xr.open_dataset(f'{ruta}slp_NCEP_1980-2020.nc')
 slp = slp.sel(lon=slice(210,320), lat=slice(-20,-75))
 
@@ -37,9 +35,8 @@ dmi = xr.open_dataset('~/PronoClim/indices_nc/iod_mmean.nc')
 sam = xr.open_dataset('~/PronoClim/indices_nc/sam_mmean.nc')
 
 ################################################################################
-# ---------------------------------------------------------------------------- #
-# Los siguientes son EJEMPLOS para mostrar como se usan las funciones y el
-# calculo de las metricas.
+# EJEMPLOS para mostrar como se usan las funciones de esta practica y
+# el calculo de las metricas
 ################################################################################
 # Ejemplo 1: ----------------------------------------------------------------- #
 # Pronostico Calibrado
@@ -50,9 +47,8 @@ mod_gem_calibrado_MediaSD, data_to_verif_MediaSD = Calibracion_MediaSD(
     Y_anios=[1983, 2020])
 
 # ---------------------------------------------------------------------------- #
-# ---------------------------------------------------------------------------- #
 # Ejemplo 2a: ---------------------------------------------------------------- #
-# Pronostico MLR con validacion cruzada
+# Pronostico MLR con validacion cruzada - TARDA 6 MINUTOS APROX.
 _, _, prec_mlr_forecast_cv, prec_mlr_to_verif_cv = \
     Compute_MLR_CV(predictando=prec,
                    mes_predictando=10,
@@ -79,31 +75,41 @@ _, _, prec_mlr_forecast_tt, prec_mlr_to_verif_tt = \
         reconstruct_full=True)
 
 # ---------------------------------------------------------------------------- #
-# ---------------------------------------------------------------------------- #
 # Ejemplo 3a: ---------------------------------------------------------------- #
-# Pronostico CCA con validacion cruzada
+# Pronostico CCA con validacion cruzada - TARDA POCO MAS DE 1 MINUTO APROX.
 pp_cca_forecast_cv, pp_cca_to_verif_cv  = CCA_mod_CV(
-    X=slp, Y=prec, var_exp=0.7, X_mes=7, Y_mes=10,
-    X_trimestral=True, Y_trimestral=True,
-    X_anios=[1983, 2020], Y_anios=[1983, 2020],
-    window_years=3, X_test=None)
+    X=slp, Y=prec, var_exp=0.7,
+    X_mes=7, Y_mes=10,
+    X_trimestral=True,
+    Y_trimestral=True,
+    X_anios=[1983, 2020],
+    Y_anios=[1983, 2020],
+    window_years=3)
 
 # Ejemplo 3b: ---------------------------------------------------------------- #
 # Pronostico CCA con training y testing
 pp_cca_forecast_tt, pp_cca_to_verif_tt  = CCA_training_testing(
     X=slp, Y=prec, var_exp=0.7,
-    X_mes=7, Y_mes=10, X_trimestral=True, Y_trimestral=True,
-    X_anios=[1983, 2020], Y_anios=[1983, 2020],
-    anios_training=[1983, 2000],  anios_testing=[2001, 2020],
+    X_mes=7, Y_mes=10,
+    X_trimestral=True,
+    Y_trimestral=True,
+    X_anios=[1983, 2020],
+    Y_anios=[1983, 2020],
+    anios_training=[1983, 2000],
+    anios_testing=[2001, 2020],
     reconstruct_full=True)
 
 # ---------------------------------------------------------------------------- #
-# ---------------------------------------------------------------------------- #
 # Ejemplo 4a: ---------------------------------------------------------------- #
-# Calibracion CCA con validacion cruzada
+# Calibracion CCA con validacion cruzada - TARDA APROX. 14 MINUTOS!
 mod_gem_calibrado_cca_cv, data_to_verif_cal_cca_cv = CCA_calibracion_CV(
-    X_modelo=mod_gem, Y_observacion=prec, var_exp=0.7,
-    Y_mes=10, Y_trimestral=True, X_anios=[1983, 2020], Y_anios=[1983, 2020],
+    X_modelo=mod_gem,
+    Y_observacion=prec,
+    var_exp=0.7,
+    Y_mes=10,
+    Y_trimestral=True,
+    X_anios=[1983, 2020],
+    Y_anios=[1983, 2020],
     window_years=3)
 
 # Ejemplo 4b: ---------------------------------------------------------------- #
@@ -111,21 +117,23 @@ mod_gem_calibrado_cca_cv, data_to_verif_cal_cca_cv = CCA_calibracion_CV(
 mod_gem_calibrado_cca_tt, data_to_verif_cal_cca_tt = (
     CCA_calibracion_training_testing(
         X_modelo=mod_gem, Y_observacion=prec,
-        var_exp=0.7, Y_mes=10, Y_trimestral=True,
-        X_anios=[1983, 2020], Y_anios=[1983, 2020],
-        anios_training=[1983, 2000],  anios_testing=[2001, 2020],
+        var_exp=0.7, Y_mes=10,
+        Y_trimestral=True,
+        X_anios=[1983, 2020],
+        Y_anios=[1983, 2020],
+        anios_training=[1983, 2000],
+        anios_testing=[2001, 2020],
         reconstruct_full=True))
 
-# ---------------------------------------------------------------------------- #
 ################################################################################
 # Metricas de verificación
 ################################################################################
-# Las metricas para pronosticos deterministicos siguen todas el mismo formato
-# con climpred
-
+# ---------------------------------------------------------------------------- #
+# Metricas Deterministicas
+# ---------------------------------------------------------------------------- #
 # PROBAR reemplazando "pronostico" y "verificacion" con los ejemplos de arriba.
-pronostico = pp_cca_forecast_cv
-verificacion = pp_cca_to_verif_cv
+pronostico = mod_gem_calibrado_MediaSD
+verificacion = data_to_verif_MediaSD
 
 # Ordenamos los datos para que climpred entienda...
 pronostico_set = SetPronos_Climpred(pronostico, verificacion)
@@ -135,27 +143,25 @@ hindcast = HindcastEnsemble(pronostico_set)
 hindcast = hindcast.add_observations(verificacion) # agregamos observaciones
 
 # A modo de EJEMPLO para no llenar el codigo de lineas casi identicas:
-for metrica in ['mae', 'rmse', 'bias', 'spearman_r']:
+for metrica in ['mae', 'rmse', 'nrmse', 'bias', 'spearman_r']:
+
     result = hindcast.verify(metric=metrica,
                              comparison='e2o', dim='init',
                              alignment='maximize')
 
     PlotContourf_SA(data=result, data_var=result.prec,
-                    scale=np.linspace(result.prec.min(), result.prec.max(), 13),
+                    scale=np.linspace(result.prec.min(),
+                                      result.prec.max(), 13),
                     cmap='Spectral_r', title=metrica)
-
-
-# RMSE ---> NMRSE
-
 
 # ---------------------------------------------------------------------------- #
 # Metricas Probabilisticos
 # ---------------------------------------------------------------------------- #
 # PROBAR reemplazando "pronostico" y "verificacion" modelo con y sin calibrar
-# tambien ejemplo 4a y 4b.
+# PROBAR con los Ejemplo1 y Ejemplo4 a y b
 
-pronostico = mod_gem_calibrado_cca_cv
-verificacion = data_to_verif_cal_cca_cv
+pronostico = mod_gem_calibrado_MediaSD
+verificacion = data_to_verif_MediaSD
 calibrado = True # IMPORTANTE! Determina como se calculan los quantiles!
 
 # Se pueden seleccionar los tiempos que se quieran evaluar
@@ -172,6 +178,7 @@ PlotContourf_SA(data=bss_forecast, data_var=bss_forecast.BSS,
                 scale=np.arange(-0.4, 1.2, 0.2),
                 cmap='Spectral_r', title='BSS')
 
+
 bss_forecast = BSS(pronostico, verificacion, fechas_pronostico, calibrado,
                    funcion_prono='Prono_AjustePDF')
 
@@ -184,7 +191,8 @@ PlotContourf_SA(data=bss_forecast, data_var=bss_forecast.BSS,
 # en esta funcion scale solo va usar los extremos max y min
 PlotPcolormesh_SA(data=bss_forecast, data_var=bss_forecast.BSS,
                   scale=np.arange(-0.4, 1.2, 0.2),
-                  cmap='Spectral_r', title='BSS')
+                  cmap='Spectral_r', title='BSS',
+                  mask_ocean=False, mask_andes=False)
 
 # RPSS ----------------------------------------------------------------------- #
 rpss_forecast = RPSS(pronostico, verificacion, fechas_pronostico, calibrado,
@@ -206,6 +214,7 @@ PlotContourf_SA(data=rpss_forecast, data_var=rpss_forecast.RPSS,
 c_roc = ROC(pronostico, verificacion, fechas_pronostico, calibrado,
                    funcion_prono='Prono_Qt')
 PlotROC(c_roc)
+
 
 c_roc = ROC(pronostico, verificacion, fechas_pronostico, calibrado,
                    funcion_prono='Prono_AjustePDF')

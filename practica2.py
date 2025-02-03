@@ -330,7 +330,7 @@ P, Q, A, B, S = Compute_CCA(
 
 # Devuelve:
 # P y Q mapas canonicos de X e Y, respectivamente
-# S: valores singulares/correlacion entre A y B
+# S: valores singulares/corPrelacion entre A y B
 # A y B: vectores canonicos de X e Y, respectivamente
 
 Plot(P, P.sel(modo=1), np.arange(-1, 1.2, .2), cmap='RdBu_r',

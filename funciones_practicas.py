@@ -1211,7 +1211,7 @@ def AutoVec_Val_EOF(m, var_exp):
         pass
 
     if sklearn_check:
-        pca = PCA(n_components=var_exp)
+        pca = PCA(n_components=var_exp, svd_solver='full')
         pca.fit(m.values)
 
         eigvals = pca.explained_variance_
@@ -1628,13 +1628,14 @@ def CCA_training_testing(X, Y, var_exp,
                                           'lon': Y.lon.values,
                                           'time': X_testing.time.values,
                                           'modo': np.arange(0,
-                                                            adj_rs.shape[-1])})
 
-            Y_training_mean, Y_training_std = normalize_and_fill(
-                Y_training)[1:3]
+                                                           adj_rs.shape[-1])})
 
-            adj_xr = ((adj_xr.sum(
-                'modo') * Y_training_std) + Y_training_mean) / (var_exp)
+            Y_training_mean, Y_training_std, Y_training_var = \
+                normalize_and_fill(Y_training)[1:4]
+
+            adj_xr = ((adj_xr.sum('modo') / var_exp) * \
+                      Y_training_std) + Y_training_mean
 
             mod_adj = adj_xr.to_dataset(name=list(Y.data_vars)[0])
             mod_adj['time'] = Y_testing.time.values
@@ -1695,10 +1696,10 @@ def CCA_calibracion_training_testing_OLD(X_modelo_full, Y_observaciones, var_exp
 
     mod_adj = []
     for r in X_modelo_full.r.values:
-        return X_training, Y_training, X_testing
         adj, b_verif = CCA_mod(X=X_training,
                                X_test=X_testing.sel(r=r),
                                Y=Y_training, var_exp=var_exp)
+
 
         adj_rs = adj.reshape(adj.shape[0],
                              len(Y_observaciones.lat.values),
@@ -1832,8 +1833,8 @@ def CCA_calibracion_training_testing(X_modelo, Y_observacion, var_exp,
                 Y_training_mean, Y_training_std, Y_training_var =  \
                     normalize_and_fill(Y_training)[1:4]
 
-                adj_xr = ((adj_xr.sum('modo') * Y_training_var / var_exp) * \
-                          Y_training_std + Y_training_mean)
+                adj_xr = ((adj_xr.sum('modo') / var_exp ) * \
+                           Y_training_std) + Y_training_mean
 
                 mod_adj.append(adj_xr)
 
@@ -2038,8 +2039,8 @@ def CCA_mod_CV(X, Y, var_exp,
         Y_training_mean, Y_training_std, Y_training_var = \
             normalize_and_fill(Y_training)[1:4]
 
-        adj_xr = ((adj_xr.sum('modo') * Y_training_var / var_exp) * \
-                  Y_training_std + Y_training_mean)
+        adj_xr = ((adj_xr.sum('modo')  / var_exp) * \
+                  Y_training_std) + Y_training_mean
 
         mod_adj.append(adj_xr)
 
@@ -2606,7 +2607,8 @@ def Plot_CategoriaMasProbable(data_categorias, variable,
     plt.tight_layout(rect=[0, 0, 0.9, 1])
     plt.show()
 
-def PlotPcolormesh_SA(data, data_var, scale, cmap, title, mask_ocean=False):
+def PlotPcolormesh_SA(data, data_var, scale, cmap, title,
+                      mask_ocean=False, mask_andes=False):
     """
     Funcion de ejemplo de ploteo de datos georeferenciados
 
@@ -2643,6 +2645,21 @@ def PlotPcolormesh_SA(data, data_var, scale, cmap, title, mask_ocean=False):
     # barra de colores
     cb = plt.colorbar(im, fraction=0.042, pad=0.035, shrink=0.8)
     cb.ax.tick_params(labelsize=8)
+
+
+    if mask_andes is True:
+        from SetCodes.descarga_topografia import compute
+        topografia = compute()
+
+        from matplotlib import colors
+        andes_cmap = colors.ListedColormap(
+            ['k'])  # una palenta de colores todo negro
+
+        # contorno que va enmascarar el relieve superior a mask_level
+        mask_level = 1300  # metros
+        ax.contourf(topografia.lon, topografia.lat, topografia.topo,
+                    levels=[mask_level, 666666],
+                    cmap=andes_cmap, transform=crs_latlon)
 
     ax.coastlines(color='k', linestyle='-', alpha=1)
 
