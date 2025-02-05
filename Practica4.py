@@ -160,8 +160,8 @@ for metrica in ['mae', 'rmse', 'nrmse', 'bias', 'spearman_r']:
 # PROBAR reemplazando "pronostico" y "verificacion" modelo con y sin calibrar
 # PROBAR con los Ejemplo1 y Ejemplo4 a y b
 
-pronostico = mod_gem_calibrado_MediaSD
-verificacion = data_to_verif_MediaSD
+pronostico = mod_gem_calibrado_cca_cv
+verificacion = data_to_verif_cal_cca_cv
 calibrado = True # IMPORTANTE! Determina como se calculan los quantiles!
 
 # Se pueden seleccionar los tiempos que se quieran evaluar
@@ -171,16 +171,34 @@ fechas_pronostico = pronostico.time.values
 verificacion['time'] = fechas_pronostico
 
 # BSS ------------------------------------------------------------------------ #
-bss_forecast = BSS(pronostico, verificacion, fechas_pronostico, calibrado,
-                   funcion_prono='Prono_Qt')
+bss_forecast =  BSS(modelo=pronostico,
+                    observaciones=verificacion,
+                    fechas_pronostico=fechas_pronostico,
+                    calibrado=calibrado,
+                    funcion_prono='Prono_Qt') # <-- funcion para calcular terciles
 
 PlotContourf_SA(data=bss_forecast, data_var=bss_forecast.BSS,
                 scale=np.arange(-0.4, 1.2, 0.2),
                 cmap='Spectral_r', title='BSS')
 
+# Se puede acceder al BSS por categorias
+bss_below, bss_normal, bss_above = BSS(modelo=pronostico,
+                                       observaciones=verificacion,
+                                       fechas_pronostico=fechas_pronostico,
+                                       calibrado=calibrado,
+                                       funcion_prono='Prono_Qt',
+                                       bss_por_categorias=True) # <== ESTO
 
-bss_forecast = BSS(pronostico, verificacion, fechas_pronostico, calibrado,
-                   funcion_prono='Prono_AjustePDF')
+PlotContourf_SA(data=bss_above, data_var=bss_above.BSS_above,
+                scale=np.arange(-0.4, 1.2, 0.2),
+                cmap='Spectral_r', title='BSS_above')
+
+
+bss_forecast =  BSS(modelo=pronostico,
+                    observaciones=verificacion,
+                    fechas_pronostico=fechas_pronostico,
+                    calibrado=calibrado,
+                    funcion_prono='Prono_AjustePDF') # <-- funcion para calcular terciles
 
 PlotContourf_SA(data=bss_forecast, data_var=bss_forecast.BSS,
                 scale=np.arange(-0.4, 1.2, 0.2),
@@ -195,39 +213,33 @@ PlotPcolormesh_SA(data=bss_forecast, data_var=bss_forecast.BSS,
                   mask_ocean=False, mask_andes=False)
 
 # RPSS ----------------------------------------------------------------------- #
-rpss_forecast = RPSS(pronostico, verificacion, fechas_pronostico, calibrado,
-                   funcion_prono='Prono_Qt')
-
-PlotContourf_SA(data=rpss_forecast, data_var=rpss_forecast.RPSS,
-                scale=np.arange(-0.4, 1.2, 0.2),
-                cmap='Spectral_r', title='RPSS')
-
-
-rpss_forecast = RPSS(pronostico, verificacion, fechas_pronostico, calibrado,
-                   funcion_prono='Prono_AjustePDF')
+rpss_forecast = RPSS(modelo=pronostico,
+                    observaciones=verificacion,
+                    fechas_pronostico=fechas_pronostico,
+                    calibrado=calibrado,
+                    funcion_prono='Prono_Qt')
 
 PlotContourf_SA(data=rpss_forecast, data_var=rpss_forecast.RPSS,
                 scale=np.arange(-0.4, 1.2, 0.2),
                 cmap='Spectral_r', title='RPSS')
 
 # ROC ------------------------------------------------------------------------ #
-c_roc = ROC(pronostico, verificacion, fechas_pronostico, calibrado,
-                   funcion_prono='Prono_Qt')
-PlotROC(c_roc)
+c_roc = ROC(modelo=pronostico,
+            observaciones=verificacion,
+            fechas_pronostico=fechas_pronostico,
+            calibrado=calibrado,
+            funcion_prono='Prono_Qt')
 
-
-c_roc = ROC(pronostico, verificacion, fechas_pronostico, calibrado,
-                   funcion_prono='Prono_AjustePDF')
-PlotROC(c_roc)
+PlotROC(roc=c_roc)
 
 # reliability diagram -------------------------------------------------------- #
-c_rel, hist_above, hist_below = REL(pronostico, verificacion, fechas_pronostico,
-                                    calibrado, funcion_prono='Prono_Qt')
-PlotRelDiag(c_rel, hist_above, hist_below)
+c_rel, hist_above, hist_below = REL(modelo=pronostico,
+            observaciones=verificacion,
+            fechas_pronostico=fechas_pronostico,
+            calibrado=calibrado,
+            funcion_prono='Prono_Qt')
 
+PlotRelDiag(rel=c_rel, hist_above=hist_above, hist_below=hist_below)
 
-c_rel, hist_above, hist_below = REL(pronostico, verificacion, fechas_pronostico,
-                                    calibrado, funcion_prono='Prono_AjustePDF')
-PlotRelDiag(c_rel, hist_above, hist_below)
 # ---------------------------------------------------------------------------- #
 ################################################################################

@@ -405,13 +405,13 @@ print(prec_anom_to_verif_tt)
 # Reconstruido
 Plot(data=prec_anom_cca_tt,
      data_var=prec_anom_cca_tt.sel(time='2015-10-01').squeeze().prec,
-     scale=np.arange(0, 200, 20), cmap='YlGnBu',
+     scale=np.arange(0, 260, 20), cmap='Spectral_r',
      title='Anomalia Prec. Reconstrucción CCA-tt - SON-2015')
 
 # Observado
 Plot(data=prec_anom_to_verif_tt,
      data_var=prec_anom_to_verif_tt.sel(time='2015-10-01').squeeze().prec,
-     scale=np.arange(0, 200, 20), cmap='YlGnBu',
+     scale=np.arange(0, 260, 20), cmap='Spectral_r',
      title='Anomalia Prec. observada - SON-2015')
 
 ################################################################################

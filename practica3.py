@@ -87,24 +87,12 @@ mod_gem_calibrado_cca_tt, data_to_verif_cal_cca_tt = (
 print(mod_gem_calibrado_cca_tt.dims)
 # Obtenemos el modelo calibrado con las mismas dimenciones que el sin calibrar
 
-mae_cal_cca_tt = MAE(mod_gem_calibrado_cca_tt, data_to_verif_cal_cca_tt)
+mae_cal_cca_tt = MAE(mod_gem_calibrado_cca_tt,
+                     data_to_verif_cal_cca_tt)
 
 PlotContourf_SA(mod_gem, mae_cal_cca_tt,
                 scale=np.arange(0, 180, 20), cmap='YlOrRd',
                 title='MAE precipitación - GEM5-NEMO Calibrado CCA-TT')
-
-from funciones_practicas import ROC, REL, PlotROC, PlotRelDiag
-c_roc = ROC(mod_gem_calibrado_cca_tt,
-            data_to_verif_cal_cca_tt,
-            mod_gem.time.values[-6], True,
-                   funcion_prono='Prono_Qt')
-PlotROC(c_roc)
-
-c_rel, hist_above, hist_below = REL(mod_gem_calibrado_cca_tt,
-            data_to_verif_cal_cca_tt,
-            mod_gem.time.values[-6], True,
-                   funcion_prono='Prono_Qt')
-PlotRelDiag(c_rel, hist_above, hist_below)
 
 # ---------------------------------------------------------------------------- #
 # Ejemplo de calibracion con CCA usando validacion cruzada
