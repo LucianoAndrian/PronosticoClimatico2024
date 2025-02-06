@@ -81,7 +81,7 @@ PlotContourf_SA(data=prec,
                 mask_andes=True, mask_ocean=False)
 
 PlotContourf_SA(data=prec_reconstruccion_son,
-                data_var=prec_reconstruccion_son.sel(time='2015-10-01').prec[0,:,:],
+                data_var=prec_reconstruccion_son.sel(time='2015-10-01').prec.squeeze(),
                 scale=np.arange(0,200, 20), cmap='YlGnBu',
                 title='Reconstrucción MLR  Prec. - SON-2015',
                 mask_andes=True, mask_ocean=False)

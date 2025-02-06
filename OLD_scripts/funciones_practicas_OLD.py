@@ -289,7 +289,7 @@ def ACC_Teorico(data):
 
 # ---------------------------------------------------------------------------- #
 def PlotContourf_SA(data, data_var, scale, cmap, title, mask_ocean=False,
-                    mask_andes=False, save=False, out_dir='~/', name_fig='fig'):
+                    mask_andes=False):
     """
     Funcion de ejemplo de ploteo de datos georeferenciados
 
@@ -299,11 +299,6 @@ def PlotContourf_SA(data, data_var, scale, cmap, title, mask_ocean=False,
     scale (array): escala para plotear contornos
     cmap (str): nombre de paleta de colores de matplotlib
     title (str): título del grafico
-    mask_ocean (bool): mascara del oceano
-    mask_andes (bool): mascara de los andes
-    save (bool): guardar la figura
-    out_dir (str): ruta del directorio de salida
-    name_fig (str): nombre de la figura
     """
     crs_latlon = ccrs.PlateCarree()
 
@@ -361,11 +356,6 @@ def PlotContourf_SA(data, data_var, scale, cmap, title, mask_ocean=False,
 
     plt.tight_layout()
     plt.show()
-
-    if save is True:
-        print(f'Guardado en: {out_dir}{name_fig}.jpg')
-        plt.savefig(f'{out_dir}{name_fig}.jpg', dpi=150)
-
 
 # ---------------------------------------------------------------------------- #
 class MLR:
@@ -554,22 +544,11 @@ def Compute_MLR(predictando=None, mes_predictando=None,
                 predictores_trimestral=False,
                 anios_predictores = None):
     """
-    Computa MLR en todos los puntos de grilla de un predictando  a partir
-    series temporales de predictores.
 
-    predictando (xr.dataset)
-    mes_predictando (int): numero del mes que se va usar en predictando
-    predictores (list): lista de predictores
-    mes_predictores (list): lista de int de meses para CADA predictor
-    predictando_trimestral (bool): True, promedio movil de 3 meses
-    predictores_trimestral (bool): True, promedio movil de 3 meses
-    anios_predictores (list): lista de anios de predictores
-
-    return:
-    output0 (xr.dataset): coeficientes de regresion
-    output1 (xr.dataset): coeficientes de regresion en anomalias
-    output2 (xr.dataset): reconstruccion del campo original a partir de MLR
-    output3 (xr.dataset): campo original en el mismo periodo que output2
+    :param predictando:
+    :param predictores:
+    :param intercept:
+    :return:
     """
     output0 = None
     output1 = None
@@ -658,27 +637,21 @@ def Compute_MLR_training_testing(predictando=None, mes_predictando=None,
                                  anios_predictores_testing = None,
                                  anios_predictores_training = None,
                                  reconstruct_full = False):
+
     """
-    Computa MLR en el periodo de testing en todos los puntos de grilla
-    de un predictando a partir series temporales de predictores en training s
 
-    predictando (xr.dataset)
-    mes_predictando (int): numero del mes que se va usar en predictando
-    predictores (list): lista de predictores
-    mes_predictores (list): lista de int de meses para CADA predictor
-    anios_training (list): extremos del periodo de anios testing
-    anios_testing (list): extremos del periodo de anios testing
-    predictando_trimestral (bool): si es True, promedio movil de 3 meses
-    predictores_trimestral (bool): si es True, promedio movil de 3 meses
-    anios_predictores (list): lista de anios de predictores
-    reconstruct_full (bool): si es True, reconstruccion del periodo completo.
-    usando training para reconstruir testing y viceversa
-
-    return:
-    output0 (xr.dataset): coeficientes de regresion
-    output1 (xr.dataset): coeficientes de regresion en anomalias
-    output2 (xr.dataset): reconstruccion del campo original a partir de MLR
-    output3 (xr.dataset): campo original en el mismo periodo que output2
+    :param predictando:
+    :param mes_predictando:
+    :param predictores:
+    :param meses_predictores:
+    :param anios_training:
+    :param anios_testing:
+    :param predictando_trimestral:
+    :param predictores_trimestral:
+    :param anios_predictores:
+    :param anios_predictores_testing:
+    :param anios_predictores_training:
+    :return:
     """
     output0 = None
     output1 = None
@@ -822,183 +795,92 @@ def Compute_MLR_training_testing(predictando=None, mes_predictando=None,
     return output0, output1, output2, output3
 
 # ---------------------------------------------------------------------------- #
-def Compute_MLR_CV(predictando, mes_predictando=None,
-                   predictores=None, meses_predictores=None,
-                   predictando_trimestral=True,
-                   predictores_trimestral=False,
-                   anios_predictores=None,
-                   window_years=3):
+def Compute_MLR_CV(xrds, predictores, window_years, intercept=True):
+    print('# --------------------------------------------------- #')
+    print('Estas usando una version desactualizada de la funcion')
+    print('# --------------------------------------------------- #')
+
     """
-    Computa MLR con validacion cruzada en todos los puntos de grilla
-    de un predictando a partir series temporales de predictores
+    Funcion de EJEMPLO de MLR con validación cruzada.
 
-    predictando (xr.dataset)
-    mes_predictando (int): numero del mes que se va usar en predictando
-    predictores (list): lista de predictores
-    mes_predictores (list): lista de int de meses para CADA predictor
-    predictando_trimestral (bool): si es True, promedio movil de 3 meses
-    predictores_trimestral (bool): si es True, promedio movil de 3 meses
-    anios_predictores (list): lista de anios de predictores
-    window_years (int): ventana de anios a usar para la validacion cruzada
+    La funcion tiene aspectos por mejorar, por ejemplo:
+     - parelización: se podria acelerar el computo de manera considerable
+     - return: la manera en la que se devuelven los resultados busca satisfacer
+     varias utilidades posteriores de ellos pero puede no ser la mas adecuada.
 
-    return:
-    output0 (xr.dataset): coeficientes de regresion
-    output1 (xr.dataset): coeficientes de regresion en anomalias
-    output2 (xr.dataset): reconstruccion del campo original a partir de MLR
-    output3 (xr.dataset): campo original en el mismo periodo que output2
+    Parametros:
+    xrds (xr.Dataset): array dim [time, lon, lat] o [time, lon, lat, r]
+        (no importa el orden, cuanto mas dimensiones mas tiempo va tardar)
+    predictores (list): lista con series temporales a usar como predictores
+    window_years (int): ventana de años a usar en la validacion cruzada
+    intercept (bool): True, ordenada al orgine (recomendado usar siempre)
+
+    return
+    1. array de dimensiones [k, lon, lat, coef.] o [k, r, lon, lat, coef]
+    - "k" son los "k-fold": años seleccionados para el modelo lineal
+    - "coef" coeficientes del modelo lineal en cada punto de grilla en orden:
+     constante, b1, b2..., bn
+     2. idem 1. sin "coef" y en "k" estan los años omitidos en cada k-fold
+     3. dict. Diccionario donde cada elemento es una lista de xr.dataarry con
+     los predictores en los años omitods en cada k-fold
+
+     La idea de estos dos ultimos resultados es poder usarlos para realizar y
+     evaluar el pronostico del modelo lineal en cada periodo omitido.
     """
+    #print('Aviso: existe una versión actualizada de esta funcion Compute_MLR_CV_2')
+    total_tiempos = len(xrds.time)
+    predictores_years_out = {}
+    for i in range(total_tiempos - window_years + 1):
 
-    intercept = True
-    xrds = predictando
-    if (isinstance(predictando, xr.Dataset)
-            and isinstance(predictores, list)
-            and isinstance(window_years, int)
-            and isinstance(intercept, bool)
-            and isinstance(mes_predictando, int)
-            and isinstance(meses_predictores, list)):
+        per10 = 10 * round((i / total_tiempos) * 10)
+        if i == 0 or per10 != 10 * round(((i - 1) / total_tiempos) * 10):
+            print(f"{per10}% completado")
 
-        predictores_years_out = {}
-        variable_predictando = list(predictando.data_vars)[0]
+        # posicion de tiempos a omitir
+        tiempos_a_omitir = range(i, i + window_years)
 
-        # Seteo de tiempos y meses igual a Compute_MLR
-        iter = zip(predictores, meses_predictores,
-                   range(len(predictores)))
-        check_anios_predictores = False
-        if anios_predictores is not None:
-            if (isinstance(anios_predictores, list) and
-                    len(anios_predictores) == len(predictores)):
-                iter = zip(predictores, meses_predictores, anios_predictores)
-                check_anios_predictores = True
-            else:
-                print('Error: "anios_predictores debe ser una lista con tantos '
-                      'iterables como predictores')
-                print(
-                    'Los predictores se setaron con los anios del predictando')
+        # selección de tiempos
+        ds_cv = xrds.drop_sel(
+            time=xrds.time.values[tiempos_a_omitir[0]:tiempos_a_omitir[-1]+1])
+        ds_out_years = xrds.drop_sel(time=ds_cv.time.values)
 
-        predictores_set = []
-        for p, mp, ap in iter:
-            if predictores_trimestral:
-                p = p.rolling(time=3, center=True).mean()
+        if 'r' in ds_cv.dims:
+            ds_cv = ds_cv - ds_cv.mean(['r','time'])
+            ds_out_years = ds_out_years - ds_cv.mean(['r','time'])
+        else:
+            ds_cv = ds_cv - ds_cv.mean('time')
+            ds_out_years = ds_out_years - ds_cv.mean(['time'])
 
-            if check_anios_predictores:
-                aux_p = p.sel(
-                    time=p.time.dt.year.isin(ap))
-            else:
-                aux_p = p.sel(
-                    time=p.time.dt.year.isin(predictando.time.dt.year))
+        predictores_cv = []
+        aux_predictores_out_years = []
+        for p in predictores:
+            aux_predictor = p.drop_sel(
+                time=p.time.values[tiempos_a_omitir[0]:tiempos_a_omitir[-1]+1])
+            aux_predictores_out_years.append(
+                p.drop_sel(time=aux_predictor.time.values))
 
-            aux_p = aux_p.sel(time=aux_p.time.dt.month.isin(mp))
+            predictores_cv.append(aux_predictor)
 
-            predictores_set.append(aux_p)
+        predictores_years_out[f"k{i}"] = aux_predictores_out_years
 
-        if predictando_trimestral:
-            predictando = predictando.rolling(time=3, center=True).mean()
+        # MLR
+        mlr = MLR(predictores_cv)
+        regre_result = mlr.compute_MLR(ds_cv[list(ds_cv.data_vars)[0]],
+                                       intercept=intercept)
 
-        predictando = predictando.sel(
-            time=predictando.time.dt.month.isin(mes_predictando))
+        if i == 0:
+            regre_result_cv = regre_result
+            ds_out_years_cv = ds_out_years
+        else:
+            regre_result_cv = xr.concat([regre_result_cv, regre_result],
+                                        dim='k')
+            ds_out_years_cv = xr.concat([ds_out_years_cv, ds_out_years],
+                                        dim='k')
 
-        # CV ----------------------------------------------------------------- #
-        total_tiempos = len(predictando.time)
-        for i in range(total_tiempos - window_years + 1):
-
-            per10 = 10 * round((i / total_tiempos) * 10)
-            if i == 0 or per10 != 10 * round(((i - 1) / total_tiempos) * 10):
-                print(f"{per10}% completado")
-
-            # posicion de tiempos a omitir
-            tiempos_a_omitir = range(i, i + window_years)
-
-            # selección de tiempos
-            ds_cv = predictando.drop_sel(
-                time=predictando.time.values[
-                     tiempos_a_omitir[0]:tiempos_a_omitir[-1] + 1])
-            ds_out_years = predictando.drop_sel(time=ds_cv.time.values)
-
-            if 'r' in ds_cv.dims:
-                ds_cv_media = ds_cv.mean(['r', 'time'], skipna=True)
-                ds_cv_std =  ds_cv.std(['r', 'time'], skipna=True)
-                ds_cv = ds_cv - ds_cv_media
-                ds_cv = ds_cv / ds_cv_std
-
-                ds_out_years = ds_out_years - ds_cv_media
-                ds_out_years = ds_out_years / ds_cv_std
-            else:
-                ds_cv_media = ds_cv.mean('time', skipna=True)
-                ds_cv_std = ds_cv.std('time', skipna=True)
-                ds_cv = ds_cv - ds_cv_media
-                ds_cv = ds_cv / ds_cv_std
-
-                ds_out_years = ds_out_years - ds_cv_std
-                ds_out_years = ds_out_years / ds_cv_std
-
-            predictores_cv = []
-            aux_predictores_out_years = []
-            for p in predictores_set:
-                aux_predictor = p.drop_sel(
-                    time=p.time.values[
-                         tiempos_a_omitir[0]:tiempos_a_omitir[-1] + 1])
-                aux_p = p.drop_sel(time=aux_predictor.time.values)
-                aux_p = aux_p - aux_predictor.mean('time', skipna=True)
-                aux_p = aux_p / aux_predictor.std('time', skipna=True)
-                aux_predictores_out_years.append(aux_p)
-
-                predictores_cv.append(aux_predictor)
-
-            predictores_years_out[f"k{i}"] = aux_predictores_out_years
-
-            # MLR
-            mlr = MLR(predictores_cv)
-            regre_result = mlr.compute_MLR(ds_cv[list(ds_cv.data_vars)[0]],
-                                           intercept=intercept)
-
-            regre_result_full = (regre_result*ds_cv_std) + ds_cv_media
-
-            years_out_reconstruct = MLR_pronostico(ds_out_years,
-                                                   regre_result,
-                                                   predictores_years_out[f"k{i}"])[1]
-
-            years_out_reconstruct = years_out_reconstruct.sel(
-                time=years_out_reconstruct.time.values[int(window_years / 2)])
-
-            years_out_reconstruct_full = (years_out_reconstruct*ds_cv_std) + \
-                                         ds_cv_media
-
-            if i == 0:
-                regre_result_cv = regre_result
-                regre_result_full_cv = regre_result_full
-                # ds_out_years_cv = ds_out_years
-                years_out_reconstruct_cv = years_out_reconstruct
-                years_out_reconstruct_full_cv = years_out_reconstruct_full
-            else:
-                regre_result_cv = xr.concat([regre_result_cv, regre_result],
-                                            dim='k')
-
-                regre_result_full_cv = xr.concat([regre_result_full_cv,
-                                                  regre_result_full], dim='k')
-                # ds_out_years_cv = xr.concat([ds_out_years_cv, ds_out_years],
-                #                             dim='k')
-
-                years_out_reconstruct_cv = xr.concat([years_out_reconstruct_cv,
-                                                      years_out_reconstruct],
-                                                     dim='time')
-
-                years_out_reconstruct_full_cv = (
-                    xr.concat([years_out_reconstruct_full_cv,
-                               years_out_reconstruct_full], dim='time'))
-
-    regre_result_cv = regre_result_cv.mean('k')
-    regre_result_full_cv = regre_result_full_cv.mean('k')
-    predictando = predictando.sel(time=years_out_reconstruct_full_cv.time.values)
-
-    return regre_result_cv, regre_result_full_cv, \
-        years_out_reconstruct_full_cv, predictando
+    return regre_result_cv, ds_out_years_cv, predictores_years_out
 
 
 def MLR_pronostico(data, regre_result, predictores):
-
-    """
-    FUNCION INTERNA para reconstruir campos a partir de salidas de MLR
-    """
 
     compute = True
     if isinstance(predictores, dict): # salida de CV
@@ -1071,12 +953,8 @@ def MLR_pronostico(data, regre_result, predictores):
     return data, predict_da
 
 # ---------------------------------------------------------------------------- #
-# CCA
-# ---------------------------------------------------------------------------- #
 def Weights(data, lon_name='lon', lat_name='lat'):
     """
-    FUNCION INTERNA
-
     Normaliza por pesando por el coseno de la latitud
 
     parametros:
@@ -1096,8 +974,6 @@ def Weights(data, lon_name='lon', lat_name='lat'):
 
 def normalize_and_fill(data):
     """
-    FUNCION INTERNA
-
     Normaliza los datos y rellena los NaN con el valor medio.
 
     Parameters:
@@ -1140,8 +1016,6 @@ def normalize_and_fill(data):
 
 def AutoVec_Val_EOF(m, var_exp):
     """
-    FUNCION INTERNA
-
     Calcula los autovectores y autovalores de la matriz m.
     Si sklearn está disponible, usa PCA para calcular los valores propios
     explicados hasta var_exp. Si no, usa numpy (mas lento).
@@ -1204,18 +1078,15 @@ def AutoVec_Val_EOF(m, var_exp):
 
 def CCA(X, Y, var_exp=0.7, dataarray_pq_outputs=False):
     """
-    FUNCION INTERNA
-
     Correlación canonica entre X e Y
     - Normaliza X, Y
     - prefilstra con EOF el numero de cp para explicar var_exp
     - CCA
 
     Parametros:
-    X (xr.DataArray o Xr.DataSet), de dimension (t, x)
-    Y /xr.DataArray o Yr.DataSet), de dimension (t, y)
-    var_exp (float) 0<var_exp<=1, default = 0.7 varianza que se quiere retener.
-    dataarray_pq_outputs (bool): si es True convierte la salida de CCA xr.dataarray
+    X xr.DataArray o Xr.DataSet, de dimension (t, x)
+    Y xr.DataArray o Yr.DataSet, de dimension (t, y)
+    var_exp float, default = 0.7 varianza que se quiere retener.
 
     return (pueden tener varios nombres...)
     todos numpy.ndarray
@@ -1302,28 +1173,6 @@ def Compute_CCA(X, Y, var_exp=0.7, X_mes=None, Y_mes=None,
                 X_trimestral=False, Y_trimestral=False,
                 X_anios=None, Y_anios=None):
 
-    """
-    Computo basico de CCA:
-
-    Parametros:
-    X (xr.DataArray)
-    Y /xr.DataArray)
-    var_exp (float): 0<var_exp<=1, default = 0.7 varianza que se quiere retener.
-    X_mes (int): mes de X a usar
-    Y_mes (int): mes de Y a usar
-    X_trimestral (bool): si es True toma promedio movil de 3 meses
-    Y_trimestral (bool): si es True toma promedio movil de 3 meses
-    X_anios (list): extremos de anios para periodo de X
-    Y_anios (list): extremos de anios para periodo de X
-
-    Returns:
-    P mapa canonico de X
-    Q mapa canonico de X
-    S valores singulares/corPrelacion entre A y B
-    A vector canonico de X
-    B vector canonico de Y
-    """
-
     compute = True
     if X_anios is None and Y_anios is None:
         print('X_anios, Y_anios is None')
@@ -1382,8 +1231,6 @@ def Compute_CCA(X, Y, var_exp=0.7, X_mes=None, Y_mes=None,
 
 def CCA_mod(X, X_test, Y, var_exp=0.7):
     """
-    FUNCION INTERNA
-
     Reconstruye el predictando Y a partir de X en X_test
 
     Parametros:
@@ -1445,397 +1292,189 @@ def CCA_mod(X, X_test, Y, var_exp=0.7):
 
 
 def CCA_training_testing(X, Y, var_exp,
-                         X_mes=None, Y_mes=None,
-                         X_trimestral=False, Y_trimestral=False,
-                         X_anios=None, Y_anios=None,
-                         anios_training=[1983, 2010],
+                         anios_training=[1984, 2011],
                          anios_testing=[2011, 2020],
-                         reconstruct_full = False):
-    """
-    CCA con training y testing
+                         plus_anio=0):
+    print('# --------------------------------------------------- #')
+    print('Estas usando una version desactualizada de la funcion')
+    print('# --------------------------------------------------- #')
 
+    """
+    CCA en periodos de training y testing
     Parametros:
-    X (xr.DataArray)
-    Y /xr.DataArray)
-    var_exp (float): 0<var_exp<=1, default = 0.7 varianza que se quiere retener.
-    X_mes (int): mes de X a usar
-    Y_mes (int): mes de Y a usar
-    X_trimestral (bool): si es True toma promedio movil de 3 meses
-    Y_trimestral (bool): si es True toma promedio movil de 3 meses
-    X_anios (list): extremos de anios para periodo de X
-    Y_anios (list): extremos de anios para periodo de X
-    anios_training (list): extremos de anios para periodo de training
-    anios_testing (list): extremos de anios para periodo de testing
-    reconstruct_full (bool): si es True, reconstruccion del periodo completo.
-    usando training para reconstruir testing y viceversa
+    X xr.DataArray o Xr.DataSet
+    Y xr.DataArray o Yr.DataSet
+    var_exp float, default 0.7 varianza que se quiere retener.
+    anios_training list comienzo y final del periodo
+    anios_testing list comienzo y final del periodo
+    plus_anio int si Y está un año siguiente a X plus_anio = 1
 
     return:
-    output0 (xr.Dataset): reconstruccion a partir de CCA
-    outout1 (xr.Dataset): Y original en el periodo de output0
+    mod_adj Xr.DataSet
+    Y_testing-Y_training.mean('time'), Xr.DataSet reconstruccion de
+    anomalias de Y
     """
-    compute = True
-    if X_anios is None and Y_anios is None:
-        print('X_anios, Y_anios is None')
-        print('Se usará el periodo de anios en común mas largo entre X e Y')
+    X_training = X.sel(
+        time=X.time.dt.year.isin(
+            np.arange(anios_training[0], anios_training[-1] + 1)))
 
-        if len(X.time.values) < len(Y.time.values):
-            X_anios_values = np.unique(X.time.dt.year.values)
-            Y_anios_values = X_anios_values
+    X_testing = X.sel(
+        time=X.time.dt.year.isin(
+            np.arange(anios_testing[0], anios_testing[-1] + 1)))
 
-        elif len(Y.time.values) < len(X.time.values):
-            X_anios_values = np.unique(Y.time.dt.year.values)
-            Y_anios_values = X_anios_values
+    Y_training = Y.sel(
+        time=Y.time.dt.year.isin(
+            np.arange(anios_training[0] + plus_anio,
+                      anios_training[-1] + 1 + plus_anio)))
 
-    elif X_anios is not None and Y_anios is not None:
-        X_anios_values = np.arange(X_anios[0], X_anios[-1] + 1)
-        Y_anios_values = np.arange(Y_anios[0], Y_anios[-1] + 1)
+    Y_testing = Y.sel(
+        time=Y.time.dt.year.isin(
+            np.arange(anios_testing[0] + plus_anio,
+                      anios_testing[-1] + 1 + plus_anio)))
 
-        if len(X_anios_values) != len(Y_anios_values):
-            print('El rango de X_anios, Y_anios debe contener la misma '
-                  'cantidad de años')
-            compute = False
-    else:
-        print('X_anios, Y_anios deben ser None o list, ambos.')
-        compute = False
+    adj, b_verif = CCA_mod(X=X_training, X_test=X_testing,
+                           Y=Y_training, var_exp=var_exp)
 
-    if compute is True:
-        plus_anio = np.abs(X_anios_values[-1]-Y_anios_values[-1])
-        # Set data
-        if X_trimestral is True:
-            X = X.rolling(time=3, center=True).mean('time')
-            # Si se hace promedio movil perdemos los extremos y CCA no admite NaNs
-            X = X.sel(time=X.time.isin(X.time.values[1:-1]))
+    adj_rs = adj.reshape(adj.shape[0],
+                         len(Y.lat.values),
+                         len(Y.lon.values),
+                         adj.shape[2])
 
-        if Y_trimestral is True:
-            Y = Y.rolling(time=3, center=True).mean('time')
-            Y = Y.sel(time=Y.time.isin(Y.time.values[1:-1]))
+    adj_xr = xr.DataArray(adj_rs, dims=['time', 'lat', 'lon', 'modo'],
+                          coords={'lat': Y.lat.values,
+                                  'lon': Y.lon.values,
+                                  'time': X_testing.time.values,
+                                  'modo': np.arange(0, adj_rs.shape[-1])})
 
-        X = X.sel(time=X.time.dt.year.isin(X_anios_values))
-        X = X.sel(time=X.time.dt.month.isin(X_mes))
+    Y_training_mean, Y_training_std, Y_training_var = \
+        normalize_and_fill(Y_training)[1:4]
 
-        Y = Y.sel(time=Y.time.dt.year.isin(Y_anios_values))
-        Y = Y.sel(time=Y.time.dt.month.isin(Y_mes))
+    adj_total = adj_xr.sum('modo')
+    try:
+        adj_std = adj_total.std('time')
+    except:
+        adj_std = adj_xr.std()
 
-        # Training - Testing
-        anios_training = np.arange(anios_training[0], anios_training[-1] + 1)
-        anios_testing = np.arange(anios_testing[0], anios_testing[-1] + 1)
+    adj_xr = (adj_total * Y_training_std / adj_std) + \
+             Y_training_mean
 
-        if plus_anio > 0:
-            if anios_testing[-1] > Y_anios[-1]:
-                anios_testing = anios_testing[0:-1]
+    mod_adj = adj_xr.to_dataset(name=list(Y.data_vars)[0])
+    mod_adj['time'] = Y_testing.time.values
 
-        if reconstruct_full is True:
-            iter = [[anios_training, anios_testing],
-                    [anios_testing, anios_training]]
-        else:
-            iter = [[anios_training, anios_testing]]
-
-        for it_n, it in enumerate(iter):
-            atr = it[0]
-            att = it[1]
-
-            X_anios_training = atr
-            X_anios_testing = att
-
-            Y_anios_training = atr + plus_anio
-            Y_anios_testing = att + plus_anio
+    return mod_adj, Y_testing-Y_training.mean('time')
 
 
-            X_training = X.sel(time=X.time.dt.year.isin(X_anios_training))
-            X_testing = X.sel(time=X.time.dt.year.isin(X_anios_testing))
-
-            Y_training = Y.sel(time=Y.time.dt.year.isin(Y_anios_training))
-            Y_testing = Y.sel(time=Y.time.dt.year.isin(Y_anios_testing))
-
-            adj, b_verif = CCA_mod(X=X_training, X_test=X_testing,
-                                   Y=Y_training, var_exp=var_exp)
-
-            adj_rs = adj.reshape(adj.shape[0],
-                                 len(Y.lat.values),
-                                 len(Y.lon.values),
-                                 adj.shape[2])
-
-            adj_xr = xr.DataArray(adj_rs,
-                                  dims=['time', 'lat', 'lon', 'modo'],
-                                  coords={'lat': Y.lat.values,
-                                          'lon': Y.lon.values,
-                                          'time': X_testing.time.values,
-                                          'modo': np.arange(0,
-
-                                                           adj_rs.shape[-1])})
-
-            Y_training_mean, Y_training_std, Y_training_var = \
-                normalize_and_fill(Y_training)[1:4]
-
-            adj_total = adj_xr.sum('modo')
-
-            try:
-                adj_std = adj_total.std('time')
-            except:
-                adj_std = adj_xr.std()
-
-            adj_xr = (adj_total * Y_training_std / adj_std) + \
-                     Y_training_mean
-
-            mod_adj = adj_xr.to_dataset(name=list(Y.data_vars)[0])
-            mod_adj['time'] = Y_testing.time.values
-
-            data_to_verif = Y_testing# - Y_training.mean('time')
-
-            if it_n == 0:
-                adj_f = mod_adj
-                data_to_verif_f = data_to_verif
-            else:
-                adj_f = xr.concat([mod_adj, adj_f], dim='time')
-                data_to_verif_f = xr.concat([data_to_verif, data_to_verif_f],
-                                            dim='time')
-    else:
-        adj_f, data_to_verif_f = None
-
-    return adj_f, data_to_verif_f
-
-
-def CCA_calibracion_training_testing(X_modelo, Y_observacion, var_exp,
-                                     Y_mes=None, Y_trimestral=False,
-                                     X_anios=None, Y_anios=None,
-                                     anios_training=[1983, 2010],
+def CCA_calibracion_training_testing(X_modelo_full, Y_observaciones, var_exp,
+                                     anios_training=[1984, 2011],
                                      anios_testing=[2011, 2020],
-                                     reconstruct_full = False):
-    """
-    Calibracion CCA con training y testing
+                                     plus_anio=0):
+    print('# --------------------------------------------------- #')
+    print('Estas usando una version desactualizada de la funcion')
+    print('# --------------------------------------------------- #')
 
+    """
+    Calibracion CCA en periodos de training y testing
     Parametros:
-    X_modelo (xr.DataArray): Modelo
-    Y_observacion (xr.DataArray)
-    var_exp (float): 0<var_exp<=1, default = 0.7 varianza que se quiere retener.
-    Y_mes (int): mes de Y a usar
-    X_trimestral (bool): si es True toma promedio movil de 3 meses
-    Y_trimestral (bool): si es True toma promedio movil de 3 meses
-    X_anios (list): extremos de anios para periodo de X
-    Y_anios (list): extremos de anios para periodo de X
-    anios_training (list): extremos de anios para periodo de training
-    anios_testing (list): extremos de anios para periodo de testing
-    reconstruct_full (bool): si es True, reconstruccion del periodo completo.
-    usando training para reconstruir testing y viceversa
+    X_modelo_full xr.DataArray o Xr.DataSet, debe incluir 'r'
+    Y_observaciones xr.DataArray o Yr.DataSet
+    var_exp float, default 0.7 varianza que se quiere retener.
+    anios_training list comienzo y final del periodo
+    anios_testing list comienzo y final del periodo
+    plus_anio int si Y está un año siguiente a X plus_anio = 1
 
     return:
-    output0 (xr.Dataset): Modelo calibrado a partir de CCA
-    outout1 (xr.Dataset): Y original en el periodo de output0
+    mod_adj Xr.DataSet
+    Y_testing-Y_training.mean('time') Xr.DataSet reconstruccion de
+    anomalias de Y
     """
+    var_name = list(X_modelo_full.data_vars)[0]
 
-    X = X_modelo
-    Y = Y_observacion
-    compute = True
-    if X_anios is None and Y_anios is None:
-        print('X_anios, Y_anios is None')
-        print('Se usará el periodo de anios en común mas largo entre X e Y')
+    X_me = X_modelo_full.mean('r')
+    X_training = X_me.sel(
+        time=X_me.time.dt.year.isin(
+            np.arange(anios_training[0], anios_training[-1])))
 
-        if len(X_modelo.time.values) < len(Y.time.values):
-            X_anios_values = np.unique(X.time.dt.year.values)
-            Y_anios_values = X_anios_values
+    X_testing = X_modelo_full.sel(
+        time=X_modelo_full.time.dt.year.isin(
+            np.arange(anios_testing[0], anios_testing[-1])))
 
-        elif len(Y.time.values) < len(X_modelo.time.values):
-            X_anios_values = np.unique(Y.time.dt.year.values)
-            Y_anios_values = X_anios_values
+    Y_training = Y_observaciones.sel(
+        time=Y_observaciones.time.dt.year.isin(
+            np.arange(anios_training[0]+plus_anio,
+                      anios_training[-1]+plus_anio)))
 
-    elif X_anios is not None and Y_anios is not None:
-        X_anios_values = np.arange(X_anios[0], X_anios[-1] + 1)
-        Y_anios_values = np.arange(Y_anios[0], Y_anios[-1] + 1)
+    Y_testing =Y_observaciones.sel(
+        time=Y_observaciones.time.dt.year.isin(
+            np.arange(anios_testing[0]+plus_anio,
+                      anios_testing[-1]+plus_anio)))
 
-        if len(X_anios_values) != len(Y_anios_values):
-            print('El rango de X_anios, Y_anios debe contener la misma '
-                  'cantidad de años')
-            compute = False
-    else:
-        print('X_anios, Y_anios deben ser None o list, ambos.')
-        compute = False
-
-    if compute is True:
-        plus_anio = np.abs(X_anios_values[-1]-Y_anios_values[-1])
-        # Set data
-        # if X_trimestral is True:
-        #     X = X_modelo.rolling(time=3, center=True).mean('time')
-        #     # Si se hace promedio movil perdemos los extremos y CCA no admite NaNs
-        #     X = X.sel(time=X.time.isin(X.time.values[1:-1]))
-
-        if Y_trimestral is True:
-            Y = Y.rolling(time=3, center=True).mean('time')
-            Y = Y.sel(time=Y.time.isin(Y.time.values[1:-1]))
+    mod_adj = []
+    for r in X_modelo_full.r.values:
+        adj, b_verif = CCA_mod(X=X_training,
+                               X_test=X_testing.sel(r=r),
+                               Y=Y_training, var_exp=var_exp)
 
 
-        X = X.sel(time=X.time.dt.year.isin(X_anios_values))
-        #X = X.sel(time=X.time.dt.month.isin(X_mes))
+        adj_rs = adj.reshape(adj.shape[0],
+                             len(Y_observaciones.lat.values),
+                             len(Y_observaciones.lon.values),
+                             adj.shape[2])
 
-        Y = Y.sel(time=Y.time.dt.year.isin(Y_anios_values))
-        Y = Y.sel(time=Y.time.dt.month.isin(Y_mes))
+        adj_xr = xr.DataArray(adj_rs, dims=['time', 'lat', 'lon', 'modo'],
+                              coords={'lat': Y_observaciones.lat.values,
+                                      'lon': Y_observaciones.lon.values,
+                                      'time': X_testing.time.values,
+                                      'modo': np.arange(0, adj_rs.shape[-1])})
 
-        # Training - Testing
-        anios_training = np.arange(anios_training[0], anios_training[-1] + 1)
-        anios_testing = np.arange(anios_testing[0], anios_testing[-1] + 1)
+        # sumamos todos los modos y escalamos para reconstruir los datos
+        Y_training_mean, Y_training_std, Y_training_var = \
+            normalize_and_fill(Y_training)[1:4]
 
-        if plus_anio > 0:
-            if anios_testing[-1] > Y_anios[-1]:
-                anios_testing = anios_testing[0:-1]
+        adj_total = adj_xr.sum('modo')
 
-        if reconstruct_full is True:
-            iter = [[anios_training, anios_testing],
-                    [anios_testing, anios_training]]
-        else:
-            iter = [[anios_training, anios_testing]]
+        try:
+            adj_std = adj_total.std('time')
+        except:
+            adj_std = adj_xr.std()
 
-        for it_n, it in enumerate(iter):
-            atr = it[0]
-            att = it[1]
+        adj_xr = (adj_total * Y_training_std / adj_std) + \
+                 Y_training_mean
 
-            X_anios_training = atr
-            X_anios_testing = att
-
-            Y_anios_training = atr + plus_anio
-            Y_anios_testing = att + plus_anio
+        mod_adj.append(adj_xr)
 
 
-            X_training = X.sel(time=X.time.dt.year.isin(X_anios_training))
-            X_testing = X.sel(time=X.time.dt.year.isin(X_anios_testing))
+    mod_adj = xr.concat(mod_adj, dim='r')
+    mod_adj['r'] = X_testing['r']
+    mod_adj = mod_adj.to_dataset(name=var_name)
 
-            Y_training = Y.sel(time=Y.time.dt.year.isin(Y_anios_training))
-            Y_testing = Y.sel(time=Y.time.dt.year.isin(Y_anios_testing))
-
-
-            mod_adj = []
-            for r in X.r.values:
-                adj, b_verif = CCA_mod(X=X_training.mean('r'),
-                                       X_test=X_testing.sel(r=r),
-                                       Y=Y_training, var_exp=var_exp)
-
-                adj_rs = adj.reshape(adj.shape[0],
-                                     len(Y.lat.values),
-                                     len(Y.lon.values),
-                                     adj.shape[2])
-
-                adj_xr = xr.DataArray(adj_rs,
-                                      dims=['time', 'lat', 'lon', 'modo'],
-                                      coords={'lat': Y.lat.values,
-                                              'lon': Y.lon.values,
-                                              'time': X_testing.time.values,
-                                              'modo': np.arange(
-                                                  0, adj_rs.shape[-1])})
-
-                # sumamos todos los modos y escalamos para reconstruir los datos
-
-                Y_training_mean, Y_training_std, Y_training_var =  \
-                    normalize_and_fill(Y_training)[1:4]
-
-                adj_total = adj_xr.sum('modo')
-
-                adj_xr = (adj_total*Y_training_std/adj_total.std('time')) + \
-                          Y_training_mean
-
-                mod_adj.append(adj_xr)
-
-            data_to_verif = Y_testing #
-
-            mod_adj = xr.concat(mod_adj, dim='r')
-            mod_adj['r'] = X_testing['r']
-            mod_adj = mod_adj.to_dataset(name=list(X.data_vars)[0])
-
-            if it_n == 0:
-                adj_f = mod_adj
-                data_to_verif_f = data_to_verif
-            else:
-                adj_f = xr.concat([mod_adj, adj_f], dim='time')
-                data_to_verif_f = xr.concat(
-                    [data_to_verif, data_to_verif_f], dim='time')
-
-    else:
-        adj_f, data_to_verif_f = None
-
-    return adj_f, data_to_verif_f
+    return mod_adj, Y_testing-Y_training.mean('time')
 
 
-def CCA_mod_CV(X, Y, var_exp,
-                 X_mes=None, Y_mes=None,
-                 X_trimestral=False, Y_trimestral=False,
-                 X_anios=None, Y_anios=None,
-                 window_years=3, X_test=None):
+def CCA_mod_CV(X, Y, var_exp, window_years, X_test=None):
+    print('# --------------------------------------------------- #')
+    print('Estas usando una version desactualizada de la funcion')
+    print('# --------------------------------------------------- #')
 
     """
-    CCA con validacion cruzada
+    CCA_mod con CV
 
     Parametros:
-    X (xr.DataArray)
-    Y (xr.DataArray)
-    var_exp (float): 0<var_exp<=1, default = 0.7 varianza que se quiere retener.
-    X_mes (int): mes de X a usar
-    Y_mes (int): mes de Y a usar
-    X_trimestral (bool): si es True toma promedio movil de 3 meses
-    Y_trimestral (bool): si es True toma promedio movil de 3 meses
-    X_anios (list): extremos de anios para periodo de X
-    Y_anios (list): extremos de anios para periodo de X
-    window_years (int): ventana de anios a usar para la validacion cruzada
-    X_test (xr.dataset): solo para calibracion. INTERNO
-
+    X xr.DataArray o Xr.DataSet
+    Y xr.DataArray o xr.DataSet
+    var_exp float, default 0.7 varianza que se quiere retener.
+    window_years (int): ventana de años a usar en la validacion cruzada
+    X_test = xr.DataArray o Yr.DataSet, default None
     return:
-    output0 (xr.Dataset): reconstruccion a partir de CCA
-    outout1 (xr.Dataset): Y original en el periodo de output0
+    mod_adj_ct Xr.DataSet
+    Y_to_verif-Y.mean('time') Xr.DataSet
     """
 
     var_name = list(Y.data_vars)[0]
     total_tiempos = len(X.time)
-    compute = True
-    if X_anios is None and Y_anios is None:
-        print('X_anios, Y_anios is None')
-        print('Se usará el periodo de anios en común mas largo entre X e Y')
 
-        if len(X.time.values) < len(Y.time.values):
-            X_anios_values = np.unique(X.time.dt.year.values)
-            Y_anios_values = X_anios_values
-
-        elif len(Y.time.values) < len(X.time.values):
-            X_anios_values = np.unique(Y.time.dt.year.values)
-            Y_anios_values = X_anios_values
-
-    elif X_anios is not None and Y_anios is not None:
-        X_anios_values = np.arange(X_anios[0], X_anios[-1] + 1)
-        Y_anios_values = np.arange(Y_anios[0], Y_anios[-1] + 1)
-
-        if len(X_anios_values) != len(Y_anios_values):
-            print('El rango de X_anios, Y_anios debe contener la misma '
-                  'cantidad de años')
-            compute = False
-    else:
-        print('X_anios, Y_anios deben ser None o list, ambos.')
-        compute = False
-
-    if compute is True:
-        # Set data
-        if X_trimestral is True:
-            X = X.rolling(time=3, center=True).mean('time')
-            # Si se hace promedio movil perdemos los extremos y CCA no admite NaNs
-            X = X.sel(time=X.time.isin(X.time.values[1:-1]))
-
-        if Y_trimestral is True:
-            Y = Y.rolling(time=3, center=True).mean('time')
-            Y = Y.sel(time=Y.time.isin(Y.time.values[1:-1]))
-
-        X = X.sel(time=X.time.dt.year.isin(X_anios_values))
-        if X_mes is not None:
-            X = X.sel(time=X.time.dt.month.isin(X_mes))
-
-        Y = Y.sel(time=Y.time.dt.year.isin(Y_anios_values))
-        Y = Y.sel(time=Y.time.dt.month.isin(Y_mes))
-
-        if X_test is not None:
-            if X_trimestral is True:
-                X_test = X_test.rolling(time=3, center=True).mean('time')
-                X_test = X_test.sel(time=X_test.time.isin(X.time.values[1:-1]))
-
-            X_test = X_test.sel(time=X.time.dt.year.isin(X_anios_values))
-            X_test = X_test.sel(time=X_test.time.dt.month.isin(X_mes))
-
-    total_tiempos = len(X.time)
     mod_adj = []
-    fechas_testing = []
     fechas = []
+    fechas_testing = []
     for i in range(total_tiempos - window_years + 1):
 
         tiempos_a_omitir = range(i, i + window_years)
@@ -1853,7 +1492,7 @@ def CCA_mod_CV(X, Y, var_exp,
 
         pos_med = int((len(X_testing.time) - 1) / 2)
 
-        fechas.append(X_testing.time.values[pos_med])
+        #fechas.append(X_testing.time.values[pos_med])
         fechas_testing.append(Y_testing.time.values[pos_med])
 
         adj = CCA_mod(X=X_training, X_test=X_testing,
@@ -1885,64 +1524,52 @@ def CCA_mod_CV(X, Y, var_exp,
         mod_adj.append(adj_xr)
 
     mod_adj_ct = xr.concat(mod_adj, dim='time')
-    if X_test is None:
-        mod_adj_ct['time'] = fechas_testing
-    else:
-        mod_adj_ct['time'] = fechas
-
+    mod_adj_ct['time'] = fechas_testing
     mod_adj_ct = mod_adj_ct.to_dataset(name=var_name)
 
     Y_to_verif = Y.sel(time=fechas_testing)
 
-    return mod_adj_ct, Y_to_verif#-Y_to_verif.mean('time')
+    return mod_adj_ct, Y_to_verif-Y.mean('time')
 
 
-def CCA_calibracion_CV(X_modelo, Y_observacion, var_exp,
-                       Y_mes=None, Y_trimestral=False,
-                       X_anios=None, Y_anios=None,
-                       window_years=3):
+def CCA_calibracion_CV_OLD(X_modelo_full, Y, var_exp, window_years):
+
+    print('# --------------------------------------------------- #')
+    print('Estas usando una version desactualizada de la funcion')
+    print('# --------------------------------------------------- #')
+
     """
-    Calibracion CCA con validacion cruzada
+    Calibracion con CCA_mod_CV, Y=miembros de ensamble en CCA_mod
 
     Parametros:
-    X_modelo (xr.DataArray): Modelo
-    Y_observacion (xr.DataArray)
-    var_exp (float): 0<var_exp<=1, default = 0.7 varianza que se quiere retener.
-    Y_mes (int): mes de Y a usar
-    Y_trimestral (bool): si es True toma promedio movil de 3 meses
-    X_anios (list): extremos de anios para periodo de X
-    Y_anios (list): extremos de anios para periodo de X
-    window_years (int): ventana de anios a usar para la validacion cruzada
+    X_modelo_full xr.DataArray o Xr.DataSet, debe incluir 'r'
+    Y xr.DataArray o xr.DataSet
+    var_exp float, default 0.7 varianza que se quiere retener.
+    window_years (int): ventana de años a usar en la validacion cruzada
 
     return:
-    output0 (xr.Dataset): Modelo calibrado a partir de CCA
-    outout1 (xr.Dataset): Y original en el periodo de output0
+    mod_adj_ct Xr.DataSet
+    Y_to_verif-Y.mean('time') Xr.DataSet
     """
 
-
-    X_mes = int(X_modelo.time.dt.month.mean().values)
     mod_adj = []
-    for r in X_modelo.r.values:
-        adj, Y_to_verif = CCA_mod_CV(X=X_modelo.mean('r'),
-                                     Y=Y_observacion,
-                                     X_test=X_modelo.sel(r=r),
-                                     var_exp=var_exp,
-                                     X_mes=X_mes, Y_mes=Y_mes,
-                                     X_trimestral=False, Y_trimestral=Y_trimestral,
-                                     X_anios=X_anios, Y_anios=Y_anios,
+    for r in X_modelo_full.r.values:
+        adj, Y_to_verif = CCA_mod_CV(X=X_modelo_full.mean('r'),
+                                     X_test=X_modelo_full.sel(r=r),
+                                     Y=Y, var_exp=var_exp,
                                      window_years=window_years)
         mod_adj.append(adj)
 
     mod_adj_xr = xr.concat(mod_adj, dim='r')
-    mod_adj_xr['r'] = X_modelo.r.values
+    mod_adj_xr['r'] = X_modelo_full.r.values
+    #mod_adj_xr = mod_adj_xr.to_dataset(name=list(X_modelo_full.data_vars)[0])
 
     return mod_adj_xr, Y_to_verif
+
 # ---------------------------------------------------------------------------- #
 # ---------------------------------------------------------------------------- #
 def Media_Desvio_CV_Observaciones(data):
     """
-    FUNCION INTERNA
-
     Calcula la media y desvio estandar usando validación cruzada de 1 año
 
     Parametros:
@@ -1973,110 +1600,64 @@ def Media_Desvio_CV_Observaciones(data):
     return mean, sd
 
 
-def Calibracion_MediaSD(X_modelo, Y_observacion,
-                        Y_mes, Y_trimestral=False,
-                        X_anios=[], Y_anios=[]):
+def Calibracion_MediaSD(mod, obs):
+    print('# --------------------------------------------------- #')
+    print('Estas usando una version desactualizada de la funcion')
+    print('# --------------------------------------------------- #')
+
     """
     Calibra removiendo la media y desvio standard del modelo y luego
     multiplicando y sumando el desvio y la media observada, respectivamente
 
     Parametros:
-    X_modelo (xr.dataarray o xr.dataset): modelo
-    Y_observacion (xr.dataarray o xr.dataset)
-    Y_mes (int): mes de Y a usar
-    Y_trimestral (bool): si es True toma promedio movil de 3 meses
-    X_anios (list): extremos de anios para periodo de X
-    Y_anios (list): extremos de anios para periodo de X
+    mod xr.dataarray o xr.dataset
+    obs xr.dataarray o xr.dataset
 
-    return:
-    output0 (xr.Dataset): Modelo calibrado
-    outout1 (xr.Dataset): Y original en el periodo de output0
+    Return:
+    calibrated_t xr.dataset o xr.dataset de la mismas dimenciones que mod
     """
-    X = X_modelo
-    Y = Y_observacion
 
     import warnings
     warnings.simplefilter("ignore", category=RuntimeWarning)
 
-    compute = True
-    if X_anios is None and Y_anios is None:
-        print('X_anios, Y_anios is None')
-        print('Se usará el periodo de anios en común mas largo entre X e Y')
+    obs_mean, obs_sd = Media_Desvio_CV_Observaciones(obs)
 
-        if len(X.time.values) < len(Y.time.values):
-            X_anios_values = np.unique(X.time.dt.year.values)
-            Y_anios_values = X_anios_values
+    if 'r' in mod.dims:
+        for r_e in mod.r.values:
+            for t in mod.time.values:
 
-        elif len(Y.time.values) < len(X.time.values):
-            X_anios_values = np.unique(Y.time.dt.year.values)
-            Y_anios_values = X_anios_values
+                mod_r_t = mod.sel(time=t, r=r_e)
 
-    elif X_anios is not None and Y_anios is not None:
-        X_anios_values = np.arange(X_anios[0], X_anios[-1] + 1)
-        Y_anios_values = np.arange(Y_anios[0], Y_anios[-1] + 1)
+                aux = mod.where(mod.r != r_e, drop=True)
+                mod_no_r_t = aux.where(aux.time != t, drop=True)
 
-        if len(X_anios_values) != len(Y_anios_values):
-            print('El rango de X_anios, Y_anios debe contener la misma '
-                  'cantidad de años')
-            compute = False
-    else:
-        print('X_anios, Y_anios deben ser None o list, ambos.')
-        compute = False
+                mean_no_r_t = mod_no_r_t.mean(['time', 'r'])
+                sd_no_r_t = mod_no_r_t.std(['time', 'r'])
 
-    if Y_trimestral:
-        obs = Y.rolling(time=3, center=True).mean('time')
+                mod_r_t_calibrated = (((mod_r_t - mean_no_r_t) / sd_no_r_t)
+                                       * obs_sd + obs_mean)
 
-    obs = obs.sel(time=obs.time.dt.month.isin(Y_mes))
-    obs = obs.sel(time=obs.time.dt.year.isin(Y_anios_values))
-
-    # Como en _OLD
-    mod = X
-
-    calibrated_t = None
-    obs_to_verif = None
-    if compute:
-        obs_mean, obs_sd = Media_Desvio_CV_Observaciones(obs)
-
-        if 'r' in mod.dims:
-            for r_e in mod.r.values:
-                for t in mod.time.values:
-
-                    mod_r_t = mod.sel(time=t, r=r_e)
-
-                    aux = mod.where(mod.r != r_e, drop=True)
-                    mod_no_r_t = aux.where(aux.time != t, drop=True)
-
-                    mean_no_r_t = mod_no_r_t.mean(['time', 'r'])
-                    sd_no_r_t = mod_no_r_t.std(['time', 'r'])
-
-                    mod_r_t_calibrated = (((mod_r_t - mean_no_r_t) / sd_no_r_t)
-                                          * obs_sd + obs_mean)
-
-                    if t == mod.time.values[0]:
-                        calibrated_r_t = mod_r_t_calibrated
-                    else:
-                        calibrated_r_t = xr.concat([calibrated_r_t,
-                                                    mod_r_t_calibrated],
-                                                   dim='time')
-
-                if int(r_e) == int(mod.r.values[0]):
-                    calibrated_t = calibrated_r_t
+                if t == mod.time.values[0]:
+                    calibrated_r_t = mod_r_t_calibrated
                 else:
-                    calibrated_t = xr.concat([calibrated_t, calibrated_r_t],
-                                             dim='r')
-            obs_to_verif = obs
-        else:
-            calibrated_t = None
+                    calibrated_r_t = xr.concat([calibrated_r_t,
+                                                mod_r_t_calibrated],
+                                               dim='time')
 
-    return calibrated_t, obs_to_verif
+            if int(r_e) == int(mod.r.values[0]):
+                calibrated_t = calibrated_r_t
+            else:
+                calibrated_t = xr.concat([calibrated_t, calibrated_r_t], dim='r')
+
+    else:
+        calibrated_t = None
+
+    return calibrated_t
 
 
 def Quantile_CV(data, quantiles=[0.33, 0.66]):
 
     """
-
-    FUNCION INTERNA
-
     Calcula los quantiles para cada punto de reticula
 
     Parametros:
@@ -2297,16 +1878,6 @@ def Prono_AjustePDF(modelo, fecha_pronostico, obs_referencia=None,
 
 
 def MakeMask(DataArray, dataname='mask'):
-
-    """
-    FUNCION INTERNA
-    Usar region mask para enmascarar el oceano
-
-    :param DataArray:
-    :param dataname:
-    :return:
-    """
-
     import regionmask
     mask=regionmask.defined_regions.natural_earth_v5_0_0.countries_110.mask(DataArray)
     mask = xr.where(np.isnan(mask), mask, 1)
@@ -2317,10 +1888,7 @@ def MakeMask(DataArray, dataname='mask'):
 def Plot_CategoriaMasProbable(data_categorias, variable,
                               titulo='Categoria más probable',
                               mask_ocean=False,
-                              mask_andes = False,
-                              save=False,
-                              out_dir='~/',
-                              name_fig='fig'):
+                              mask_andes = False):
     """
     Plotea la salida de Prono_Qt graficando la en cada punto de reticula
     la categoria mas probable
@@ -2330,11 +1898,7 @@ def Plot_CategoriaMasProbable(data_categorias, variable,
     variable (str): nombre de la variable, admite prec, pp, precipitacion,
     temp, tref o temperatura (determina las paletas de colores a usar)
     titulo (str): titulo de la figura
-    mask_ocean (bool): mascara del oceano
-    mask_andes (bool): mascara de los andes
-    save (bool): guardar la figura
-    out_dir (str): ruta del directorio de salida
-    name_fig (str): nombre de la figura
+
     """
     import matplotlib.pyplot as plt
     from matplotlib.colors import ListedColormap
@@ -2421,15 +1985,9 @@ def Plot_CategoriaMasProbable(data_categorias, variable,
     plt.tight_layout(rect=[0, 0, 0.9, 1])
     plt.show()
 
-    if save is True:
-        print(f'Guardado en: {out_dir}{name_fig}.jpg')
-        plt.savefig(f'{out_dir}{name_fig}.jpg', dpi=150)
-
-
 
 def PlotPcolormesh_SA(data, data_var, scale, cmap, title,
-                      mask_ocean=False, mask_andes=False,
-                      save=False, out_dir='~/', name_fig='fig'):
+                      mask_ocean=False, mask_andes=False):
     """
     Funcion de ejemplo de ploteo de datos georeferenciados
 
@@ -2439,12 +1997,6 @@ def PlotPcolormesh_SA(data, data_var, scale, cmap, title,
     scale (array): escala para plotear contornos
     cmap (str): nombre de paleta de colores de matplotlib
     title (str): título del grafico
-    mask_ocean (bool): mascara del oceano
-    mask_andes (bool): mascara de los andes
-    save (bool): guardar la figura
-    out_dir (str): ruta del directorio de salida
-    name_fig (str): nombre de la figura
-
     """
     crs_latlon = ccrs.PlateCarree()
 
@@ -2504,18 +2056,9 @@ def PlotPcolormesh_SA(data, data_var, scale, cmap, title,
 
     plt.tight_layout()
     plt.show()
-
-    if save is True:
-        print(f'Guardado en: {out_dir}{name_fig}.jpg')
-        plt.savefig(f'{out_dir}{name_fig}.jpg', dpi=150)
-
-
 # ---------------------------------------------------------------------------- #
 def decode_cf(ds, time_var):
-    """
-    FUNCION INTERNA
-    Decodes time dimension to CFTime standards.
-    """
+    """Decodes time dimension to CFTime standards."""
     if ds[time_var].attrs["calendar"] == "360":
         ds[time_var].attrs["calendar"] = "360_day"
     ds = xr.decode_cf(ds, decode_times=True)
@@ -2570,9 +2113,6 @@ def SetPronos_Climpred(mod, obs_ref):
 def Comparar_Qt(data, quantiles):
 
     """
-
-    FUNCION INTERNA
-
     (se usa para observaciones)
     Compara valores de data con los quantiles 0.33 y 0.66
     data: xr.Dataset
@@ -2606,16 +2146,13 @@ def BSS(modelo, observaciones, fechas_pronostico, calibrado,
     """
     Brier Skill Score
 
-    modelo (xr.Dataset)
-    observaciones (xr.Dataset)
-    fechas_pronostico (cftime._cftime.Datetime360Day)
-    calibrado (bool)
-    bss_por_categorias (bool): si es True devuelve las 3 categorias del BSS
+    modelo xr.Dataset
+    observaciones xr.Dataset
+    fechas_pronostico cftime._cftime.Datetime360Day
+    calibrado bool
 
     return
-    bss,
-    si bss_por_categorias=True
-    bss, bss_below, bss_normal, bss_above
+    bss xr.dataset
 
     """
 
@@ -2706,11 +2243,11 @@ def BSS(modelo, observaciones, fechas_pronostico, calibrado,
     BSf = []
 
     # que buena idea che...
-    BSo_below = []
+    BSo_bellow = []
     BSo_normal = []
     BSo_above = []
 
-    BSf_below = []
+    BSf_bellow = []
     BSf_normal = []
     BSf_above = []
 
@@ -2728,7 +2265,7 @@ def BSS(modelo, observaciones, fechas_pronostico, calibrado,
         BSo.append(aux_bs)
 
         if bss_por_categorias is True:
-            BSo_below.append((clim_prob[0] - below) ** 2)
+            BSo_bellow.append((clim_prob[0] - below) ** 2)
             BSo_normal.append((clim_prob[1] - normal) ** 2)
             BSo_above.append((clim_prob[2] - above) ** 2)
 
@@ -2750,11 +2287,11 @@ def BSS(modelo, observaciones, fechas_pronostico, calibrado,
 
         if bss_por_categorias is True:
             try:
-                BSf_below.append((below_f - below) ** 2)
+                BSf_bellow.append((below_f - below) ** 2)
                 BSf_normal.append((normal_f - normal) ** 2)
                 BSf_above.append((above_f - above) ** 2)
             except:
-                BSf_below.append((below_f - below.values) ** 2)
+                BSf_bellow.append((below_f - below.values) ** 2)
                 BSf_normal.append((normal_f - normal.values) ** 2)
                 BSf_above.append((above_f - above.values) ** 2)
 
@@ -2766,19 +2303,19 @@ def BSS(modelo, observaciones, fechas_pronostico, calibrado,
     BSf = BSf.drop_vars('category')
 
     if bss_por_categorias is True:
-        BSo_below = xr.concat(BSo_below, dim='time')
+        BSo_bellow = xr.concat(BSo_bellow, dim='time')
         BSo_normal = xr.concat(BSo_normal, dim='time')
         BSo_above = xr.concat(BSo_above, dim='time')
 
-        BSo_below = BSo_below.drop_vars('category')
+        BSo_bellow = BSo_bellow.drop_vars('category')
         BSo_normal = BSo_normal.drop_vars('category')
         BSo_above = BSo_above.drop_vars('category')
 
-        BSf_below = xr.concat(BSf_below, dim='time')
+        BSf_bellow = xr.concat(BSf_bellow, dim='time')
         BSf_normal = xr.concat(BSf_normal, dim='time')
         BSf_above = xr.concat(BSf_above, dim='time')
 
-        BSf_below = BSf_below.drop_vars('category')
+        BSf_bellow = BSf_bellow.drop_vars('category')
         BSf_normal = BSf_normal.drop_vars('category')
         BSf_above = BSf_above.drop_vars('category')
 
@@ -2787,7 +2324,7 @@ def BSS(modelo, observaciones, fechas_pronostico, calibrado,
         bss = 1 - BSf/BSo.values
 
         if bss_por_categorias is True:
-            bss_below = 1 - BSf_below / BSo_below.values
+            bss_bellow = 1 - BSf_bellow / BSo_bellow.values
             bss_normal = 1 - BSf_normal / BSo_normal.values
             bss_above = 1 - BSf_above / BSo_above.values
 
@@ -2797,11 +2334,11 @@ def BSS(modelo, observaciones, fechas_pronostico, calibrado,
         bss['time'] = [fechas_pronostico]
 
         if bss_por_categorias is True:
-            bss_below = 1 - BSf_below / BSo_below
+            bss_bellow = 1 - BSf_bellow / BSo_bellow
             bss_normal = 1 - BSf_normal / BSo_normal
             bss_above = 1 - BSf_above / BSo_above
 
-            bss_below['time'] = [fechas_pronostico]
+            bss_bellow['time'] = [fechas_pronostico]
             bss_normal['time'] = [fechas_pronostico]
             bss_above['time'] = [fechas_pronostico]
 
@@ -2809,8 +2346,8 @@ def BSS(modelo, observaciones, fechas_pronostico, calibrado,
     bss = bss.mean('time')
 
     if bss_por_categorias is True:
-        bss_below = bss_below.to_dataset(name='BSS_below')
-        bss_below = bss_below.mean('time')
+        bss_bellow = bss_bellow.to_dataset(name='BSS_bellow')
+        bss_bellow = bss_bellow.mean('time')
 
         bss_normal = bss_normal.to_dataset(name='BSS_normal')
         bss_normal = bss_normal.mean('time')
@@ -2819,7 +2356,7 @@ def BSS(modelo, observaciones, fechas_pronostico, calibrado,
         bss_above = bss_above.mean('time')
 
     if bss_por_categorias is True:
-        return bss, bss_below, bss_normal, bss_above
+        return bss_bellow, bss_normal, bss_above
     else:
         return bss
 
@@ -3259,13 +2796,9 @@ def REL(modelo, observaciones, fechas_pronostico, calibrado,
     return rel_result_xr, hist_above, hist_below
 
 
-def PlotROC(roc, save=False, out_dir='~/', name_fig='fig'):
+def PlotROC(roc):
     """
-    roc: salida de ROC()
-
-    save (bool): guardar la figura
-    out_dir (str): ruta del directorio de salida
-    name_fig (str): nombre de la figura
+    :param roc: salida de ROC()
     """
     import matplotlib.pyplot as plt
 
@@ -3292,20 +2825,10 @@ def PlotROC(roc, save=False, out_dir='~/', name_fig='fig'):
     plt.grid()
     plt.show()
 
-    if save is True:
-        print(f'Guardado en: {out_dir}{name_fig}.jpg')
-        plt.savefig(f'{out_dir}{name_fig}.jpg', dpi=150)
 
-
-
-def PlotRelDiag(rel, hist_above, hist_below,
-                save=False, out_dir='~/', name_fig='fig'):
+def PlotRelDiag(rel, hist_above, hist_below):
     """
     rel, hist_above, hist_below salidas de REL()
-
-    save (bool): guardar la figura
-    out_dir (str): ruta del directorio de salida
-    name_fig (str): nombre de la figura
     """
     import matplotlib.pyplot as plt
     var_name = list(rel.data_vars)[0]
@@ -3330,11 +2853,5 @@ def PlotRelDiag(rel, hist_above, hist_below,
     ax.set_ylabel('Observed Relative Frequency')
     plt.grid()
     plt.show()
-
-    if save is True:
-        print(f'Guardado en: {out_dir}{name_fig}.jpg')
-        plt.savefig(f'{out_dir}{name_fig}.jpg', dpi=150)
-
-
 # ---------------------------------------------------------------------------- #
 ################################################################################

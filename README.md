@@ -1,4 +1,4 @@
-# Crear un Environnement de Conda en Linux
+# Crear un Environment de Conda en Linux
 
 1. Es necesario tener Anaconda o Miniconda ya instalado (Si es el caso, pasar al paso 2).
 
@@ -14,9 +14,8 @@
     ~/miniconda3/bin/conda init zsh
 
 2. Crear el environment de conda.  
-Por terminal, ejecutar (verificar ruta al arhvico PronoClim.yml):  
+Por terminal, ejecutar:  
     >conda env create -f ./EnvSet/PronoClim.yml
-
 
 3. Activar el environment.  
 Una vez creado, para activar el environment:  

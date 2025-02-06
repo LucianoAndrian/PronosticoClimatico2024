@@ -55,19 +55,6 @@ PlotContourf_SA(mod_gem, mae_cal_mean_sd,
                 scale=np.arange(0, 180, 20), cmap='YlOrRd',
                 title='MAE precipitación - GEM5-NEMO Calibrado Media-SD')
 
-from funciones_practicas import ROC, REL, PlotROC, PlotRelDiag
-c_roc = ROC(mod_gem_prec_cal,
-            data_to_verif,
-            mod_gem.time.values[:], True,
-                   funcion_prono='Prono_Qt')
-PlotROC(c_roc)
-
-c_rel, hist_above, hist_below = REL(mod_gem_prec_cal,
-            data_to_verif,
-            mod_gem.time.values[:], True,
-                   funcion_prono='Prono_Qt')
-PlotRelDiag(c_rel, hist_above, hist_below)
-
 # ---------------------------------------------------------------------------- #
 # Ejemplo de calibracion con CCA usando training y testing
 # ---------------------------------------------------------------------------- #
@@ -122,7 +109,7 @@ PlotContourf_SA(mod_gem, mae_sin_c2,
 
 mae_cal_cca_cv = MAE(mod_gem_calibrado_cca_cv, data_to_verif_cal_cca_cv)
 
-PlotContourf_SA(mod_gem, mod_gem_calibrado_cca_cv,
+PlotContourf_SA(mod_gem, mae_cal_cca_cv,
                 scale=np.arange(0, 180, 20), cmap='YlOrRd',
                 title='MAE precipitación - GEM5-NEMO Calibrado CCA-CV')
 
@@ -144,13 +131,13 @@ fecha_pronostico = mod_gem.time.values[-6] # 2015-08-01
 
 # Si el modelo ya fue calibrado, debemos dar las observaciones (obs_referencia)
 # para que la funcion tome de alli los terciles para comparar
-prono_prob_gem = Prono_Qt(
+prono_prob_gem_qt = Prono_Qt(
     modelo=mod_gem_prec_cal,  # calibrado con media y sd. PROBAR CON LOS OTROS
     fecha_pronostico=fecha_pronostico,
     obs_referencia=prec) # <-- Si el modelo fue calibrado
 
-print(prono_prob_gem.shape)
-print(prono_prob_gem)
+print(prono_prob_gem_qt.shape)
+print(prono_prob_gem_qt)
 
 # obtenemos un xr.Datarray que para cada punto de reticula tiene un valor de
 # probabilidad de 0-1 separado en tres categorias.
@@ -160,17 +147,17 @@ print(prono_prob_gem)
 
 # Podemos graficarlo:
 # En cada punto de reticula se grafica la categoria mas probable
-Plot_CategoriaMasProbable(data_categorias=prono_prob_gem,
-                          variable='prec', # para el color de las categorias
+Plot_CategoriaMasProbable(data_categorias=prono_prob_gem_qt,
+                          variable='tref', # para el color de las categorias
                           titulo=f"Pronostico probabilistico  GEM5-NEMO - SON "
                                  f"{fecha_pronostico.year}")
 
 # Si el modelo no fue calibrado, obs_referencia=None
-prono_prob_gem = Prono_Qt(modelo=mod_gem,
+prono_prob_gem_qt_nc = Prono_Qt(modelo=mod_gem,
                           fecha_pronostico=fecha_pronostico,
                           obs_referencia=None) # <-- Modelo no calibrado
 
-Plot_CategoriaMasProbable(data_categorias=prono_prob_gem,
+Plot_CategoriaMasProbable(data_categorias=prono_prob_gem_qt_nc,
                           variable='prec',
                           titulo=f"Pronostico probabilistico  GEM5-NEMO - SON "
                                  f"{fecha_pronostico.year}")
@@ -181,13 +168,13 @@ Plot_CategoriaMasProbable(data_categorias=prono_prob_gem,
 # Luego se comparan terciles igual que antes.
 # ---------------------------------------------------------------------------- #
 # Argumentos y salida de la funcion son los mismos que para Prono_Qt()
-prono_prob_cm4 = Prono_AjustePDF(
+prono_prob_gem_pdf = Prono_AjustePDF(
     modelo=mod_gem_calibrado_cca_cv, # Calibrado con CCA-CV
     fecha_pronostico=fecha_pronostico,
     obs_referencia=prec)
 
 # En cada punto de reticula se grafica la categoria mas probable
-Plot_CategoriaMasProbable(data_categorias=prono_prob_cm4,
+Plot_CategoriaMasProbable(data_categorias=prono_prob_gem_pdf,
                           variable='prec',
                           titulo=f"Pronostico probabilistico CanCM4i-IC3 - SON "
                                  f"{fecha_pronostico.year} \n Ajuste Gaussiano",
