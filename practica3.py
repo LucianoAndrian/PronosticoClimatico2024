@@ -100,8 +100,8 @@ print(mod_gem_calibrado_cca_cv.dims)
 # Tecnicamente no deberiamos comparar con el primer grafico sin calibrar ya que:
 # Al usar CV con ventana de 3 años perdemos los extremos
 # (da practicamente igual)
-anom_mod_gem = mod_gem.sel(time=slice('1984-08-01', '2019-08-01'))
-mae_sin_c2 = MAE(anom_mod_gem, data_to_verif_cal_cca_cv)
+aux_mod_gem = mod_gem.sel(time=slice('1984-08-01', '2019-08-01'))
+mae_sin_c2 = MAE(aux_mod_gem, data_to_verif_cal_cca_cv)
 
 PlotContourf_SA(mod_gem, mae_sin_c2,
                 scale=np.arange(0, 180, 20), cmap='YlOrRd',
@@ -127,7 +127,7 @@ from funciones_practicas import (Prono_Qt, Prono_AjustePDF,
 # para la fecha se recomienda obtenerlas de los valores de "time" de los modelos
 # print(mod_gem.time.values)
 
-fecha_pronostico = mod_gem.time.values[-6] # 2015-08-01
+fecha_pronostico = mod_gem.time.values[-6:] # 2015-08-01
 
 # Si el modelo ya fue calibrado, debemos dar las observaciones (obs_referencia)
 # para que la funcion tome de alli los terciles para comparar
@@ -148,7 +148,7 @@ print(prono_prob_gem_qt)
 # Podemos graficarlo:
 # En cada punto de reticula se grafica la categoria mas probable
 Plot_CategoriaMasProbable(data_categorias=prono_prob_gem_qt,
-                          variable='tref', # para el color de las categorias
+                          variable='prec', # para el color de las categorias
                           titulo=f"Pronostico probabilistico  GEM5-NEMO - SON "
                                  f"{fecha_pronostico.year}")
 
@@ -160,7 +160,7 @@ prono_prob_gem_qt_nc = Prono_Qt(modelo=mod_gem,
 Plot_CategoriaMasProbable(data_categorias=prono_prob_gem_qt_nc,
                           variable='prec',
                           titulo=f"Pronostico probabilistico  GEM5-NEMO - SON "
-                                 f"{fecha_pronostico.year}")
+                                 f"{fecha_pronostico.year} \n sin calibrar")
 
 # ---------------------------------------------------------------------------- #
 # 2. Ajustando cada pronostico a una PDF gaussiana a partir de sus miembros

@@ -75,13 +75,15 @@ PlotContourf_SA(data=prec_regresion_anomalias_son,
 # Podemos ver la reconstruccion y la observada
 PlotContourf_SA(data=prec,
                 data_var=prec.sel(
-                    time='2015-10-01').prec[0,:,:], # esto [0,:,:] puede no ser siempre necesario
+                    time='2015-10-01').prec[0,:,:],
+                # esto [0,:,:] puede no ser siempre necesario
                 scale=np.arange(0,200, 20), cmap='YlGnBu',
                 title='Prec. observada - SON-2015',
                 mask_andes=True, mask_ocean=False)
 
 PlotContourf_SA(data=prec_reconstruccion_son,
                 data_var=prec_reconstruccion_son.sel(time='2015-10-01').prec.squeeze(),
+                # esto prec.squeeze() hace lo mismo que prec[0,:,:] pero es mas universal
                 scale=np.arange(0,200, 20), cmap='YlGnBu',
                 title='Reconstrucción MLR  Prec. - SON-2015',
                 mask_andes=True, mask_ocean=False)
@@ -147,31 +149,6 @@ PlotContourf_SA(data=prec_reconstruccion_tt,
                 title='Reconstrucción MLR testing Prec. - SON-2015',
                 mask_andes=True, mask_ocean=False)
 
-# Si queremos ver ese año pero en anomalia
-from funciones_practicas import SingleAnomalia_CV
-
-pp_mlr_2015 = SingleAnomalia_CV(prec_reconstruccion_tt, 2015)
-
-PlotContourf_SA(data=pp_mlr_2015,
-                data_var=pp_mlr_2015,
-                scale=np.arange(-50, 55, 5),
-                cmap='BrBG',
-                title='Anomalia Prec. Reconstrucción MLR testing - SON-2015',
-                mask_andes=True, mask_ocean=False)
-
-# Anomalías observadas
-aux = prec.rolling(time=3, center=True).mean()
-aux = aux.sel(time=aux.time.dt.month.isin(10))
-pp_obs_2015 = SingleAnomalia_CV(aux, 2015)
-del aux
-
-PlotContourf_SA(data=pp_obs_2015,
-                data_var=pp_obs_2015,
-                scale=np.arange(-50, 55, 5),
-                cmap='BrBG',
-                title='Anomalia Prec. observada - SON-2015',
-                mask_andes=True, mask_ocean=False)
-
 # ****
 # Si usamos reconstruct_full = True
 # Va a usar: training para computar la MLR y luego reconstruir testing
@@ -206,7 +183,8 @@ prec_regresion_tt2, prec_regresion_anomalias_tt2, prec_reconstruccion_tt_full, \
 
 # Con todos estos resultados anteriores tambien se puede operar
 
-acc_result = ACC(prec_to_verif_tt_full, prec_reconstruccion_tt_full, cvanomaly=True,
+acc_result = ACC(prec_to_verif_tt_full, prec_reconstruccion_tt_full,
+                 cvanomaly=True,
                  reference_time_period=[1983,2020])
 
 PlotContourf_SA(acc_result,
@@ -330,7 +308,7 @@ P, Q, A, B, S = Compute_CCA(
 
 # Devuelve:
 # P y Q mapas canonicos de X e Y, respectivamente
-# S: valores singulares/corPrelacion entre A y B
+# S: valores singulares/correlacion entre A y B
 # A y B: vectores canonicos de X e Y, respectivamente
 
 Plot(P, P.sel(modo=1), np.arange(-1, 1.2, .2), cmap='RdBu_r',
@@ -342,19 +320,6 @@ Plot(Q, Q.sel(modo=1), np.arange(-1, 1.2, .2), cmap='BrBG',
      title='SLP Modo=1')
 Plot(Q, Q.sel(modo=2), np.arange(-1, 1.2, .2), cmap='BrBG',
      title='SLP Modo=2')
-
-# Podemos ver la evolución temporal de estos campos en el tiempo
-import matplotlib.pyplot as plt
-plt.plot(A[:,0], label='Vector Canonico de SLP')
-plt.plot(B[:,0], label='Vector Canonico de PP')
-plt.legend()
-plt.title(f'Modo 0 - r={S[0]:.3g}')
-plt.xlabel('tiempo')
-plt.show()
-# S indica la correlacion entre los vectores canonicos
-# podemos verlo:
-print(f"Correlación A y B modo 0: {np.corrcoef(A[:,0], B[:,0])[0,1]}")
-print(f"Valor de S[0] = {S[0]}")
 
 # ---------------------------------------------------------------------------- #
 # Con SST
@@ -405,13 +370,13 @@ print(prec_anom_to_verif_tt)
 # Reconstruido
 Plot(data=prec_anom_cca_tt,
      data_var=prec_anom_cca_tt.sel(time='2015-10-01').squeeze().prec,
-     scale=np.arange(0, 260, 20), cmap='Spectral_r',
+     scale=np.arange(0, 260, 20), cmap='YlGnBu',
      title='Anomalia Prec. Reconstrucción CCA-tt - SON-2015')
 
 # Observado
 Plot(data=prec_anom_to_verif_tt,
      data_var=prec_anom_to_verif_tt.sel(time='2015-10-01').squeeze().prec,
-     scale=np.arange(0, 260, 20), cmap='Spectral_r',
+     scale=np.arange(0, 260, 20), cmap='YlGnBu',
      title='Anomalia Prec. observada - SON-2015')
 
 ################################################################################

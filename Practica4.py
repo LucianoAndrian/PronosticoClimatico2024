@@ -182,12 +182,13 @@ PlotContourf_SA(data=bss_forecast, data_var=bss_forecast.BSS,
                 cmap='Spectral_r', title='BSS')
 
 # Se puede acceder al BSS por categorias
-bss_below, bss_normal, bss_above = BSS(modelo=pronostico,
-                                       observaciones=verificacion,
-                                       fechas_pronostico=fechas_pronostico,
-                                       calibrado=calibrado,
-                                       funcion_prono='Prono_Qt',
-                                       bss_por_categorias=True) # <== ESTO
+bss_forecast, bss_below, bss_normal, bss_above = \
+    BSS(modelo=pronostico,
+        observaciones=verificacion,
+        fechas_pronostico=fechas_pronostico,
+        calibrado=calibrado,
+        funcion_prono='Prono_Qt',
+        bss_por_categorias=True) # <== ESTO
 
 PlotContourf_SA(data=bss_above, data_var=bss_above.BSS_above,
                 scale=np.arange(-0.4, 1.2, 0.2),

@@ -80,6 +80,14 @@ PlotContourf_SA(data=pp_stn_ratio, data_var=pp_stn_ratio.prec,
                 title='Cociente Señal vs. Ruido',
                 mask_ocean=True, mask_andes=True)
 
+# signal / varianza toal ----------------------------------------------------- #
+pp_stv_ratio = pp_model_signal/prec_mod_gem.var(['time', 'r'])
+
+PlotContourf_SA(data=pp_stv_ratio, data_var=pp_stv_ratio.prec,
+                scale=np.arange(0, 1.1, 0.1),
+                cmap='Spectral_r',
+                title='Cociente Señal vs. Varianza total',
+                mask_ocean=True, mask_andes=True)
 
 # Anomalia cruzada con ventana de un año ------------------------------------- #
 pp_obs_anom = CrossAnomaly_1y(prec_obs)
@@ -93,6 +101,10 @@ help(ACC)
 aux = prec_obs.rolling(time=3, center=True).mean() # promedio movil 3 meses
 pp_obs_son = aux.sel(time=aux.time.dt.month.isin(10)) # Octubre ---> s-O-n
 del aux # borramos la variable auxiliar
+
+# guardar el archivo en formato netcdf4
+ruta = '~/'
+pp_obs_son.to_netcdf(ruta + 'pp_obs_son.nc')
 
 # Las anomalías se toman cruzadas con ventana de un año
 acc = ACC(data1=prec_mod_gem.mean('r'), # media del ensamble
@@ -128,7 +140,6 @@ PlotContourf_SA(data=acc2,
                 scale=np.arange(0, 1, 0.1),
                 cmap='Reds', title='ACC',
                 mask_ocean=True, mask_andes=True)
-
 
 # ACC teorico ---------------------------------------------------------------- #
 acc_t = ACC_Teorico(prec_mod_gem)
